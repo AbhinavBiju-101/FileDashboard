@@ -43,10 +43,11 @@ public class GDriveBrowseHandler implements HttpHandler {
     public void handle(HttpExchange exchange) throws IOException {
         String query = exchange.getRequestURI().getRawQuery();
         String rawPath = QueryUtil.getParam(query, "path");
+        String only = QueryUtil.getParam(query, "only"); // "folders" | "files" | null - see SidebarRenderer.java's "Home folders"/"Home files" shortcuts
         List<Crumb> crumbs = parsePath(rawPath);
         String currentFolderId = crumbs.isEmpty() ? "root" : crumbs.get(crumbs.size() - 1).id;
 
-        String html = buildPage(crumbs, currentFolderId);
+        String html = buildPage(crumbs, currentFolderId, only);
         byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
         exchange.sendResponseHeaders(200, bytes.length);
@@ -80,7 +81,7 @@ public class GDriveBrowseHandler implements HttpHandler {
         return sb.toString();
     }
 
-    private String buildPage(List<Crumb> crumbs, String currentFolderId) {
+    private String buildPage(List<Crumb> crumbs, String currentFolderId, String only) {
         StringBuilder sb = new StringBuilder();
         sb.append("<!DOCTYPE html><html><head><meta charset='UTF-8'>");
         sb.append("<meta name='viewport' content='width=device-width, initial-scale=1'>");
@@ -102,7 +103,23 @@ public class GDriveBrowseHandler implements HttpHandler {
                   .append(PathUtil.htmlEscape(crumbs.get(i).name)).append("</a>");
             }
         }
-        sb.append("</div></div>");
+        sb.append("</div>");
+        if ("folders".equals(only) || "files".equals(only)) {
+            sb.append("<span class='gdrive-only-badge'>").append("folders".equals(only) ? "Folders" : "Files").append(" only</span>");
+        }
+        // Same visual pattern as local Browse's inline search box (see
+        // BrowseHandler.buildToolbar()), pointed at /gdrive-search instead
+        // of /search - a whole-Drive name search rather than one scoped to
+        // this folder, since Drive items don't have one true path to scope
+        // a search "under". Live suggestions reuse /gdrive-suggest, the
+        // same endpoint the shell's "/" address bar uses in Drive mode.
+        sb.append("<div class='search-suggest-wrap'>");
+        sb.append("<form class='search-inline' method='GET' action='/gdrive-search'>")
+          .append("<input type='text' name='q' class='js-gdrive-search-input' placeholder='Search Google Drive...' autocomplete='off'>")
+          .append("<button type='submit'>Search</button></form>");
+        sb.append("<div class='search-suggestions' id='gdriveSearchSuggestions'></div>");
+        sb.append("</div>");
+        sb.append("</div>");
 
         if (!GDriveAuth.isConnected()) {
             sb.append("<div class='gdrive-empty-state'>");
@@ -112,6 +129,11 @@ public class GDriveBrowseHandler implements HttpHandler {
         } else {
             try {
                 List<GDriveClient.DriveItem> items = GDriveClient.listChildren(currentFolderId);
+                if ("folders".equals(only)) {
+                    items = filterItems(items, true);
+                } else if ("files".equals(only)) {
+                    items = filterItems(items, false);
+                }
                 sb.append("<div class='grid'>");
                 for (GDriveClient.DriveItem item : items) {
                     if (GDriveClient.isFolder(item.mimeType)) {
@@ -121,7 +143,9 @@ public class GDriveBrowseHandler implements HttpHandler {
                     }
                 }
                 if (items.isEmpty()) {
-                    sb.append("</div><p class='empty'>This folder is empty.</p>");
+                    sb.append("</div><p class='empty'>")
+                      .append("folders".equals(only) ? "No folders here." : "files".equals(only) ? "No loose files here." : "This folder is empty.")
+                      .append("</p>");
                 } else {
                     sb.append("</div>");
                     if (items.size() >= 200) {
@@ -136,28 +160,200 @@ public class GDriveBrowseHandler implements HttpHandler {
             }
         }
 
+        sb.append(SEARCH_SUGGEST_SCRIPT);
+        sb.append(CONTEXT_MENU_SCRIPT);
         sb.append("</div></body></html>");
         return sb.toString();
     }
 
+    private List<GDriveClient.DriveItem> filterItems(List<GDriveClient.DriveItem> items, boolean foldersOnly) {
+        List<GDriveClient.DriveItem> out = new ArrayList<>();
+        for (GDriveClient.DriveItem item : items) {
+            boolean isFolder = GDriveClient.isFolder(item.mimeType);
+            if (isFolder == foldersOnly) out.add(item);
+        }
+        return out;
+    }
+
+    // Shared by this page's own search box and GDriveSearchHandler's -
+    // live-suggests via /gdrive-suggest as you type; clicking a folder hit
+    // jumps straight into it, clicking a file hit re-runs a full search for
+    // its exact name (rather than trying to "open" it from just an id/name,
+    // which /gdrive-suggest doesn't return enough about to do safely).
+    static final String SEARCH_SUGGEST_SCRIPT =        "<script>" +
+        "(function(){" +
+        "var input=document.querySelector('.js-gdrive-search-input');" +
+        "if(!input) return;" +
+        "var box=document.getElementById('gdriveSearchSuggestions');" +
+        "var q0=new URLSearchParams(location.search).get('q');" +
+        "if(q0) input.value=q0;" +
+        "var debounce=null;" +
+        "input.addEventListener('input', function(){" +
+          "clearTimeout(debounce);" +
+          "var q=input.value.trim();" +
+          "if(!q){ box.innerHTML=''; box.classList.remove('open'); return; }" +
+          "debounce=setTimeout(function(){" +
+            "fetch('/gdrive-suggest?q='+encodeURIComponent(q)).then(function(r){return r.json();}).then(function(items){" +
+              "if(!items.length){ box.innerHTML=''; box.classList.remove('open'); return; }" +
+              "box.innerHTML=items.map(function(it){" +
+                "var idAttr=String(it.id).replace(/\"/g,'&quot;');" +
+                "var nameAttr=String(it.name).replace(/\"/g,'&quot;');" +
+                "var icon=it.type==='folder'?'&#128193;':'&#128196;';" +
+                "return '<div class=\"search-suggestion-item\" data-id=\"'+idAttr+'\" data-name=\"'+nameAttr+'\" data-type=\"'+it.type+'\">'+" +
+                  "'<span class=\"search-suggestion-icon\">'+icon+'</span>'+it.name+'</div>';" +
+              "}).join('');" +
+              "box.classList.add('open');" +
+            "}).catch(function(){});" +
+          "}, 150);" +
+        "});" +
+        "box.addEventListener('click', function(e){" +
+          "var item=e.target.closest('.search-suggestion-item');" +
+          "if(!item) return;" +
+          "var nav=parent&&parent.navigateCurrentTab?parent.navigateCurrentTab:function(u){location.href=u;};" +
+          "if(item.dataset.type==='folder'){" +
+            "nav('/gdrive?path='+encodeURIComponent(item.dataset.id)+'|'+encodeURIComponent(item.dataset.name));" +
+          "}else{" +
+            "nav('/gdrive-search?q='+encodeURIComponent(item.dataset.name));" +
+          "}" +
+        "});" +
+        "document.addEventListener('click', function(e){" +
+          "if(!e.target.closest('.search-suggest-wrap')){ box.classList.remove('open'); }" +
+        "});" +
+        "})();" +
+        "</script>";
+
+    // Right-click menu for Drive cards. Reuses the same .context-menu /
+    // .context-menu-item CSS already defined globally in Styles.java (the
+    // same classes local browsing's PageScripts.java uses), so it looks
+    // identical - but it's a separate, smaller script rather than actually
+    // sharing code with PageScripts.java, since that one is deeply built
+    // around local filesystem paths (data-path, /fileops, /subfolders,
+    // etc.) throughout, and Drive items are addressed by id, not path.
+    // Only read operations are wired up (Open, Open in new tab, Download,
+    // Copy link, Refresh); write operations (Rename, Move to..., Delete,
+    // New folder, Upload) are shown but disabled with a "read-only for
+    // now" tooltip, ready to be enabled once Drive write support exists.
+    static final String CONTEXT_MENU_SCRIPT =
+        "<div id='gdriveContextMenu' class='context-menu'></div>" +
+        "<script>" +
+        "(function(){" +
+        "var menu=document.getElementById('gdriveContextMenu');" +
+        "var DISABLED_TITLE='Coming soon - Google Drive is read-only here for now';" +
+        "function closeMenu(){ menu.classList.remove('open'); menu.innerHTML=''; }" +
+        "function menuItem(label, action, enabled){" +
+          "if(enabled){" +
+            "return '<div class=\"context-menu-item\" data-gdrive-action=\"'+action+'\">'+label+'</div>';" +
+          "}" +
+          "return '<div class=\"context-menu-item context-menu-item-disabled\" title=\"'+DISABLED_TITLE+'\">'+label+'</div>';" +
+        "}" +
+        "function openMenuAt(x, y, html){" +
+          "menu.innerHTML=html;" +
+          "menu.style.left=x+'px';" +
+          "menu.style.top=y+'px';" +
+          "menu.classList.add('open');" +
+          "var rect=menu.getBoundingClientRect();" +
+          "if(rect.right>window.innerWidth){ menu.style.left=Math.max(0,x-rect.width)+'px'; }" +
+          "if(rect.bottom>window.innerHeight){ menu.style.top=Math.max(0,y-rect.height)+'px'; }" +
+        "}" +
+        "document.addEventListener('contextmenu', function(e){" +
+          "var card=e.target.closest('.card[data-gdrive-id]');" +
+          "if(card){" +
+            "e.preventDefault();" +
+            "var kind=card.dataset.gdriveKind;" +
+            "var webViewLink=card.dataset.gdriveWebviewlink;" +
+            "var items=[];" +
+            "if(webViewLink){ items.push(menuItem('Open', 'open', true)); items.push(menuItem('Open in new tab', 'open-new-tab', true)); }" +
+            "if(kind==='folder'){ items.push(menuItem('Open here', 'open-here', true)); }" +
+            "if(kind==='file' && card.dataset.gdriveDownloadurl){ items.push(menuItem('Download', 'download', true)); }" +
+            "if(webViewLink){ items.push(menuItem('Copy link', 'copy-link', true)); }" +
+            "items.push('<div class=\"context-menu-divider\"></div>');" +
+            "items.push(menuItem('Rename', 'rename', false));" +
+            "items.push(menuItem('Move to...', 'move', false));" +
+            "items.push(menuItem('Delete', 'delete', false));" +
+            "items.push('<div class=\"context-menu-divider\"></div>');" +
+            "items.push(menuItem('Refresh', 'refresh', true));" +
+            "menu.dataset.gdriveTargetId=card.dataset.gdriveId;" +
+            "menu.dataset.gdriveTargetName=card.dataset.gdriveName;" +
+            "menu.dataset.gdriveTargetWebviewlink=webViewLink||'';" +
+            "menu.dataset.gdriveTargetDownloadurl=card.dataset.gdriveDownloadurl||'';" +
+            "menu.dataset.gdriveTargetNavurl=card.dataset.gdriveNavurl||'';" +
+            "openMenuAt(e.clientX, e.clientY, items.join(''));" +
+            "return;" +
+          "}" +
+          "if(e.target.closest('.grid')){" +
+            "e.preventDefault();" +
+            "var emptyItems=[" +
+              "menuItem('New folder', 'new-folder', false)," +
+              "menuItem('Upload here', 'upload', false)," +
+              "'<div class=\"context-menu-divider\"></div>'," +
+              "menuItem('Refresh', 'refresh', true)" +
+            "];" +
+            "menu.dataset.gdriveTargetId='';" +
+            "openMenuAt(e.clientX, e.clientY, emptyItems.join(''));" +
+          "}" +
+        "});" +
+        "menu.addEventListener('click', function(e){" +
+          "var item=e.target.closest('[data-gdrive-action]');" +
+          "if(!item) return;" +
+          "var action=item.dataset.gdriveAction;" +
+          "var webViewLink=menu.dataset.gdriveTargetWebviewlink;" +
+          "var downloadUrl=menu.dataset.gdriveTargetDownloadurl;" +
+          "var navUrl=menu.dataset.gdriveTargetNavurl;" +
+          "var nav=parent&&parent.navigateCurrentTab?parent.navigateCurrentTab:function(u){location.href=u;};" +
+          "if(action==='open'||action==='open-new-tab'){ window.open(webViewLink,'_blank','noopener'); }" +
+          "else if(action==='open-here'){ nav(navUrl); }" +
+          "else if(action==='download'){ location.href=downloadUrl; }" +
+          "else if(action==='copy-link'){" +
+            "if(navigator.clipboard){ navigator.clipboard.writeText(webViewLink).catch(function(){}); }" +
+          "}" +
+          "else if(action==='refresh'){ location.reload(); }" +
+          "closeMenu();" +
+        "});" +
+        "document.addEventListener('click', function(e){ if(!e.target.closest('.context-menu')){ closeMenu(); } });" +
+        "document.addEventListener('scroll', closeMenu, true);" +
+        "window.addEventListener('blur', closeMenu);" +
+        "})();" +
+        "</script>";
+
     private String folderCard(List<Crumb> crumbs, GDriveClient.DriveItem item) {
         List<Crumb> withThis = new ArrayList<>(crumbs);
         withThis.add(new Crumb(item.id, item.name));
-        String name = PathUtil.htmlEscape(item.name);
-        return "<a class=\"card folder\" href=\"/gdrive?path=" + pathFor(withThis, withThis.size() - 1) + "\">" +
+        return folderCardForPath(pathFor(withThis, withThis.size() - 1), item.name, item.id, item.webViewLink);
+    }
+
+    // Shared by folderCard() above (navigating deeper from a known
+    // ancestry) and GDriveSearchHandler.java (a search hit has no known
+    // ancestry - Drive items don't have one true parent path - so it just
+    // treats the hit as if it were a fresh top-level breadcrumb of its own,
+    // same as GDriveSuggestHandler.java's address-bar jump-to-folder does).
+    // The data-gdrive-* attributes are what GDRIVE_CONTEXT_MENU_SCRIPT
+    // reads to build its right-click menu.
+    static String folderCardForPath(String path, String rawName, String id, String webViewLink) {
+        String name = PathUtil.htmlEscape(rawName);
+        return "<a class=\"card folder\" href=\"/gdrive?path=" + path + "\" " +
+               "data-gdrive-id=\"" + PathUtil.htmlEscape(id) + "\" data-gdrive-name=\"" + name + "\" " +
+               "data-gdrive-kind=\"folder\" data-gdrive-webviewlink=\"" + (webViewLink == null ? "" : PathUtil.htmlEscape(webViewLink)) + "\" " +
+               "data-gdrive-navurl=\"/gdrive?path=" + path + "\">" +
                "<div class=\"icon\">&#128193;</div>" +
                "<div class=\"name\" title=\"" + name + "\">" + name + "</div>" +
                "</a>";
     }
 
-    private String fileCard(GDriveClient.DriveItem item) {
+    static String fileCard(GDriveClient.DriveItem item) {
         String name = PathUtil.htmlEscape(item.name);
         boolean nativeDoc = GDriveClient.isNativeGoogleDoc(item.mimeType);
         String icon = iconForMime(item.mimeType, item.name);
         String sizeLabel = nativeDoc ? nativeDocLabel(item.mimeType) : GridRenderer.humanSize(item.size);
 
         StringBuilder sb = new StringBuilder();
-        sb.append("<div class=\"card file\">");
+        String downloadUrl = nativeDoc ? "" : "/gdrive-file?id=" + PathUtil.urlEncode(item.id)
+              + "&name=" + PathUtil.urlEncode(item.name)
+              + "&mime=" + PathUtil.urlEncode(item.mimeType == null ? "" : item.mimeType);
+        sb.append("<div class=\"card file\" data-gdrive-id=\"").append(PathUtil.htmlEscape(item.id))
+          .append("\" data-gdrive-name=\"").append(name)
+          .append("\" data-gdrive-kind=\"file\" data-gdrive-webviewlink=\"")
+          .append(item.webViewLink == null ? "" : PathUtil.htmlEscape(item.webViewLink))
+          .append("\" data-gdrive-downloadurl=\"").append(PathUtil.htmlEscape(downloadUrl)).append("\">");
         sb.append("<div class=\"icon\">").append(icon).append("</div>");
         sb.append("<div class=\"name\" title=\"").append(name).append("\">").append(name).append("</div>");
         sb.append("<div class=\"meta\">").append(sizeLabel).append("</div>");
@@ -167,17 +363,14 @@ public class GDriveBrowseHandler implements HttpHandler {
         }
         if (!nativeDoc) {
             if (item.webViewLink != null) sb.append(" &middot; ");
-            sb.append("<a href=\"/gdrive-file?id=").append(PathUtil.urlEncode(item.id))
-              .append("&name=").append(PathUtil.urlEncode(item.name))
-              .append("&mime=").append(PathUtil.urlEncode(item.mimeType == null ? "" : item.mimeType))
-              .append("\">Download</a>");
+            sb.append("<a href=\"").append(PathUtil.htmlEscape(downloadUrl)).append("\">Download</a>");
         }
         sb.append("</div>");
         sb.append("</div>");
         return sb.toString();
     }
 
-    private String nativeDocLabel(String mimeType) {
+    static String nativeDocLabel(String mimeType) {
         if (mimeType == null) return "Google file";
         if (mimeType.endsWith(".document")) return "Google Doc";
         if (mimeType.endsWith(".spreadsheet")) return "Google Sheet";
@@ -187,7 +380,7 @@ public class GDriveBrowseHandler implements HttpHandler {
         return "Google file";
     }
 
-    private String iconForMime(String mimeType, String name) {
+    static String iconForMime(String mimeType, String name) {
         if (mimeType != null) {
             if (mimeType.endsWith(".document")) return GridRenderer.iconFor("doc");
             if (mimeType.endsWith(".spreadsheet")) return GridRenderer.iconFor("xlsx");
@@ -208,6 +401,7 @@ public class GDriveBrowseHandler implements HttpHandler {
             ".gdrive-actions a{color:#2563eb;text-decoration:none;}" +
             ".gdrive-actions a:hover{text-decoration:underline;}" +
             ".gdrive-more-note{padding:0 24px 24px;}" +
+            ".gdrive-only-badge{margin-left:12px;font-size:12px;color:#666;background:#eef0f2;padding:3px 9px;border-radius:10px;}" +
             "</style>";
     }
 }

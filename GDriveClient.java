@@ -124,6 +124,46 @@ public class GDriveClient {
         }
     }
 
+    // Name-contains search across the whole connected Drive (not scoped to
+    // any particular folder). Unlike local search, this doesn't walk
+    // descendants of a starting folder - Drive API's "'X' in parents"
+    // scoping only covers direct children, not a whole subtree, and
+    // building real folder-scoped search would mean first walking the
+    // entire folder tree to collect every descendant id. Searching the
+    // whole Drive by name is what Google's own Drive search box does too,
+    // so it's a reasonable read on "search" for this data model rather
+    // than a compromise - see GDriveSearchHandler.java.
+    @SuppressWarnings("unchecked")
+    public static List<DriveItem> search(String nameQuery) throws IOException {
+        String token = GDriveAuth.getValidAccessToken();
+        String escaped = nameQuery.replace("\\", "\\\\").replace("'", "\\'");
+        String q = "name contains '" + escaped + "' and trashed = false";
+        String url = "https://www.googleapis.com/drive/v3/files"
+            + "?q=" + urlEncode(q)
+            + "&fields=" + urlEncode("files(id,name,mimeType,size,webViewLink)")
+            + "&orderBy=" + urlEncode("folder,name")
+            + "&pageSize=50"
+            + "&spaces=drive";
+        Map<String, Object> resp = GDriveAuth.getJson(url, token);
+        List<DriveItem> out = new ArrayList<>();
+        Object filesObj = resp.get("files");
+        if (filesObj instanceof List) {
+            for (Object o : (List<Object>) filesObj) {
+                if (!(o instanceof Map)) continue;
+                Map<String, Object> m = (Map<String, Object>) o;
+                DriveItem item = new DriveItem();
+                item.id = str(m.get("id"));
+                item.name = str(m.get("name"));
+                item.mimeType = str(m.get("mimeType"));
+                item.webViewLink = str(m.get("webViewLink"));
+                String sizeStr = str(m.get("size"));
+                try { item.size = sizeStr == null ? 0 : Long.parseLong(sizeStr); } catch (NumberFormatException ignored) {}
+                out.add(item);
+            }
+        }
+        return out;
+    }
+
     private static String str(Object o) {
         return o instanceof String ? (String) o : null;
     }

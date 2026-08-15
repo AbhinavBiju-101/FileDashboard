@@ -56,6 +56,7 @@ public class Styles {
         ".session-badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;white-space:nowrap;}" +
         ".session-badge-current{background:#e6f4ea;color:#1a7f37;}" +
         ".session-badge-active{background:#fff1e6;color:#b5590a;}" +
+        ".session-badge-unsaved{background:#fff3d6;color:#8a5a00;}" +
         ".session-actions{display:flex;gap:8px;flex-shrink:0;}" +
         ".session-btn{background:#f4f5f7;border:1px solid #d7dae0;color:#333;padding:6px 12px;" +
           "border-radius:6px;font-size:12px;cursor:pointer;}" +
@@ -99,6 +100,8 @@ public class Styles {
         ".sidebar-item:hover{background:#2d333b;color:#fff;}" +
         ".sidebar-icon{font-size:17px;width:20px;text-align:center;flex-shrink:0;}" +
         ".sidebar-divider{height:1px;background:#333;margin:8px 16px;}" +
+        ".sidebar:not(.drive-mode) .sidebar-mode-drive{display:none;}" +
+        ".sidebar.drive-mode .sidebar-mode-local{display:none;}" +
         ".main-content{margin-left:190px;transition:margin-left .15s;}" +
         "#sidebar.collapsed ~ .main-content{margin-left:56px;}" +
         ".brand-link{color:inherit;text-decoration:none;}" +
@@ -160,6 +163,9 @@ public class Styles {
         ".tab-close{font-size:15px;line-height:1;color:#888;padding:0 4px;border-radius:4px;}" +
         ".tab-close:hover{color:#c00;background:rgba(0,0,0,.06);}" +
         ".tab-new{padding:7px 12px;font-size:16px;cursor:pointer;color:#555;background:none;border:none;align-self:center;}" +
+        ".shell-unsaved-badge{align-self:center;margin-left:6px;padding:4px 10px;font-size:12px;color:#8a5a00;" +
+            "background:#fff3d6;border:1px solid #f0d18a;border-radius:12px;cursor:pointer;white-space:nowrap;flex-shrink:0;}" +
+        ".shell-unsaved-badge:hover{background:#ffe8b3;}" +
         ".tab-new:hover{color:#111;}" +
         // Tab group ("folder") header - deliberately a single fixed accent
         // for every group (no per-group color picker), consistent with
@@ -170,6 +176,7 @@ public class Styles {
         ".tab-group-header:hover{background:#dadefa;}" +
         ".tab-group-toggle{font-size:10px;transition:transform .12s;}" +
         ".tab-group-header.collapsed .tab-group-toggle{transform:rotate(-90deg);}" +
+        ".tab-group-header.dragging{opacity:.4;cursor:grabbing;}" +
         ".tab-group-name{max-width:120px;overflow:hidden;text-overflow:ellipsis;}" +
         ".tab-group-count{color:#7278d6;font-weight:500;}" +
         ".tabcontent{flex:1;position:relative;background:#fff;}" +
@@ -196,6 +203,8 @@ public class Styles {
         ".context-menu-item{padding:8px 16px;cursor:pointer;color:#222;}" +
         ".context-menu-item:hover{background:#f0f5ff;color:#2563eb;}" +
         ".context-menu-divider{height:1px;background:#eee;margin:5px 0;}" +
+        ".context-menu-item-disabled{color:#aaa;cursor:not-allowed;}" +
+        ".context-menu-item-disabled:hover{background:none;color:#aaa;}" +
         // Move-to folder picker modal
         ".move-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1500;align-items:center;justify-content:center;}" +
         ".move-modal-overlay.open{display:flex;}" +

@@ -34,6 +34,13 @@ public class AppShellHandler implements HttpHandler {
         sb.append("<div class='main-content shell-main'>");
         sb.append("<div id='tabbar' class='tabbar'>");
         sb.append("<button id='newTabBtn' class='tab-new' onclick=\"openTab('/quickstart','Quick Start')\" title='New tab'>+</button>");
+        // Only visible when the current browser tab's session has real
+        // content (a folder or viewer tab) but hasn't been given a name -
+        // see shellUpdateUnsavedBadge() in ShellScript.java. A session that
+        // never gets named and only ever has "useless" tabs (Dashboard,
+        // Settings, Sessions, Recycle Bin, or Drive/local Home) is cleaned
+        // up automatically and never needs this at all.
+        sb.append("<span id='shellUnsavedBadge' class='shell-unsaved-badge' onclick='shellRenameCurrentSession()' title='This session is not named - it may get cleaned up automatically. Click to name and keep it.' style='display:none;'>&#9888; Unsaved session</span>");
         sb.append("</div>");
         sb.append("<div id='tabContextMenu' class='context-menu'></div>");
         sb.append("<div id='tabcontent' class='tabcontent'></div>");

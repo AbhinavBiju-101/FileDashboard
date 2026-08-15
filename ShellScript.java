@@ -22,6 +22,14 @@ public class ShellScript {
         "var shellActiveTabId=null;" +
         "var shellTabCounter=0;" +
         "var shellDragTabId=null;" +
+        // Set while a group header itself is being dragged (see
+        // shellBuildGroupHeader) - lets a whole group be reordered among
+        // top-level tabbar items the same way an individual tab is, moving
+        // its header and every one of its member tabs together as one
+        // block. Kept as a separate variable from shellDragTabId so the
+        // two drag modes (reordering a tab vs. reordering a whole group)
+        // never get confused with each other mid-drag.
+        "var shellDragGroupId=null;" +
         // ---- Tab groups ("folders") - collapsible clusters of tabs in the
         // bar. Every group is rendered with the same fixed accent color
         // (no per-group color picker - deliberately not a "labeling"
@@ -66,6 +74,17 @@ public class ShellScript {
         "var HEARTBEAT_STALE_MS=10000;" +
         "var shellSessionId=null;" +
         "var shellHeartbeatTimer=null;" +
+        // A fixed, well-known session id for the specialized "Google Drive"
+        // session (see SessionsHandler.java's pinned row). Using a fixed id
+        // rather than one shellGenerateSessionId() would produce means it
+        // can be opened even before it's ever been saved once, by
+        // synthesizing a default entry for it in shellLoadSession() below.
+        // Its root is always Drive's "My Drive", never any local folder -
+        // shellApplyDriveSidebar() is what makes the pinned sidebar reflect
+        // that (swapping the classic OS-folder shortcuts for "Home
+        // folders"/"Home files" against Drive instead) whenever this is the
+        // session open in this browser tab.
+        "var GDRIVE_SESSION_ID='session-gdrive';" +
 
         "function fdFormatDate(ts){" +
           "var d=new Date(ts);" +
@@ -118,13 +137,50 @@ public class ShellScript {
           "return false;" +
         "}" +
 
+        // ---- Automatic cleanup of throwaway sessions ----
+        // Every browser tab opened on File Dashboard starts a brand new
+        // session (see shellInitSession()) - including ones opened purely
+        // by accident and closed again a second later. Without this, every
+        // one of those would sit forever in the Sessions list as a
+        // generically-named "Session <date>" entry with nothing useful in
+        // it. So: a session only actually gets written to storage once it
+        // either (a) has a real name the person gave it (see
+        // shellRenameCurrentSession()/SessionsHandler.java's Rename
+        // button), or (b) has at least one tab that isn't just one of the
+        // "nothing to lose" pages below. Until then it lives purely in
+        // this tab's memory and vanishes with it when the tab closes -
+        // which is exactly the desired behavior for an accidental open.
+        "function shellIsUselessTabUrl(url){" +
+          "if(!url) return true;" +
+          "if(url.indexOf('/dashboard')===0) return true;" +
+          "if(url.indexOf('/settings')===0) return true;" +
+          "if(url.indexOf('/sessions')===0) return true;" +
+          "if(url.indexOf('/trash')===0) return true;" + // covers /trash and /trash-browse
+          "if(url.indexOf('/browse?path=')===0){ return url==='/browse?path='; }" +
+          "if(url.indexOf('/gdrive?path=')===0){ return url==='/gdrive?path='; }" +
+          "return false;" +
+        "}" +
+        "function shellSessionHasOnlyUselessTabs(){" +
+          "return shellTabs.every(function(t){ return shellIsUselessTabUrl(t.url); });" +
+        "}" +
+
         "function shellSaveState(){" +
           "try{" +
             "var sessions=shellLoadSessionsMap();" +
             "var existing=sessions[shellSessionId];" +
+            "var isNamed=(shellSessionId===GDRIVE_SESSION_ID)||!!(existing&&existing.named);" +
+            "if(!isNamed && shellSessionHasOnlyUselessTabs()){" +
+              // Nothing worth keeping (yet) - if an earlier, since-emptied
+              // version of this session had been persisted, drop it too,
+              // rather than leaving a stale leftover entry behind.
+              "if(existing){ delete sessions[shellSessionId]; shellSaveSessionsMap(sessions); }" +
+              "shellUpdateUnsavedBadge();" +
+              "return;" +
+            "}" +
             "sessions[shellSessionId]={" +
               "id:shellSessionId," +
               "name:(existing&&existing.name)||('Session '+fdFormatDate(Date.now()))," +
+              "named:!!(existing&&existing.named)," +
               "tabs:shellTabs," +
               "active:shellActiveTabId," +
               "groups:shellGroups," +
@@ -132,8 +188,70 @@ public class ShellScript {
               "updatedAt:Date.now()" +
             "};" +
             "shellSaveSessionsMap(sessions);" +
+            "shellUpdateUnsavedBadge();" +
           "}catch(e){}" +
         "}" +
+
+        // The little "\u26a0 Unsaved session" pill next to the "+" button
+        // (see AppShellHandler.java) - the in-context alternative to
+        // hunting it down on the Sessions page, and considerably more
+        // reliable than the beforeunload warning below (see its comment
+        // for why that one can't be counted on alone).
+        "function shellUpdateUnsavedBadge(){" +
+          "var badge=document.getElementById('shellUnsavedBadge');" +
+          "if(!badge) return;" +
+          "if(shellSessionId===GDRIVE_SESSION_ID){ badge.style.display='none'; return; }" +
+          "var sessions=shellLoadSessionsMap();" +
+          "var existing=sessions[shellSessionId];" +
+          "var isNamed=!!(existing&&existing.named);" +
+          "badge.style.display=(!isNamed && !shellSessionHasOnlyUselessTabs())?'inline-flex':'none';" +
+        "}" +
+
+        // Shared by the unsaved-session badge's click handler and
+        // SessionsHandler.java's own Rename button (which reaches this tab
+        // via window.parent). Builds a complete, valid session entry from
+        // the LIVE in-memory tabs/groups if none has ever been persisted
+        // yet (see shellSaveState()'s skip-saving branch above) rather
+        // than writing a bare stub with no tabs into storage.
+        "function shellRenameCurrentSession(){" +
+          "var sessions=shellLoadSessionsMap();" +
+          "var existing=sessions[shellSessionId];" +
+          "var name=prompt('Name this session:', (existing&&existing.name)||'');" +
+          "if(!name) return;" +
+          "var toSave=existing||{createdAt:Date.now()};" +
+          "toSave.id=shellSessionId;" +
+          "toSave.name=name;" +
+          "toSave.named=true;" +
+          "toSave.tabs=shellTabs;" +
+          "toSave.groups=shellGroups;" +
+          "toSave.active=shellActiveTabId;" +
+          "toSave.updatedAt=Date.now();" +
+          "if(!toSave.createdAt) toSave.createdAt=Date.now();" +
+          "sessions[shellSessionId]=toSave;" +
+          "shellSaveSessionsMap(sessions);" +
+          "shellUpdateUnsavedBadge();" +
+        "}" +
+
+        // Best-effort warning on an actual browser tab/window close (or
+        // navigating this browser tab away to a different site entirely).
+        // Modern browsers deliberately ignore any custom message text or
+        // buttons here and show their own generic "Leave site?"
+        // Leave/Cancel prompt instead - a long-standing anti-phishing
+        // restriction, not something this app can work around - so this
+        // can't literally offer a "rename or cancel" choice the way the
+        // unsaved-session badge above can. It's still worth wiring up as a
+        // last line of defense, since the badge only helps if it's been
+        // noticed before the tab gets closed.
+        "window.addEventListener('beforeunload', function(e){" +
+          "if(shellSessionId===GDRIVE_SESSION_ID) return;" +
+          "var sessions=shellLoadSessionsMap();" +
+          "var existing=sessions[shellSessionId];" +
+          "if(existing && existing.named) return;" +
+          "if(shellSessionHasOnlyUselessTabs()) return;" +
+          "e.preventDefault();" +
+          "e.returnValue='';" +
+          "return '';" +
+        "});" +
 
         "function shellLoadState(){" +
           "var hadExistingSession=shellInitSession();" +
@@ -209,6 +327,9 @@ public class ShellScript {
           "if(activeElsewhere && !force){ alert('That session is currently open in another tab.'); return false; }" +
           "var sessions=shellLoadSessionsMap();" +
           "var s=sessions[targetId];" +
+          "if(!s && targetId===GDRIVE_SESSION_ID){" +
+            "s={id:GDRIVE_SESSION_ID, name:'Google Drive', tabs:[{id:'tab-gdrive-1', url:'/gdrive?path=', title:'Google Drive', groupId:null}], groups:[], active:'tab-gdrive-1'};" +
+          "}" +
           "if(!s){ alert('That session no longer exists.'); return false; }" +
 
           "if(activeElsewhere && force){" +
@@ -221,6 +342,7 @@ public class ShellScript {
 
           "shellSessionId=targetId;" +
           "try{ sessionStorage.setItem(SESSION_ID_KEY, shellSessionId); }catch(e){}" +
+          "shellApplyDriveSidebar(shellSessionId===GDRIVE_SESSION_ID);" +
           "shellGroups=s.groups||[];" +
           "shellGroupCounter=shellGroups.reduce(function(m,g){" +
             "var n=parseInt(g.id.replace('group-',''),10); return isNaN(n)?m:Math.max(m,n);" +
@@ -240,6 +362,11 @@ public class ShellScript {
           "return true;" +
         "}" +
 
+        "function shellApplyDriveSidebar(isDrive){" +
+          "var sb=document.getElementById('sidebar');" +
+          "if(sb){ sb.classList.toggle('drive-mode', !!isDrive); }" +
+        "}" +
+
         // The other end of "Close & open here": some other browser tab has
         // just claimed this tab's session out from under it. Rather than
         // leaving this tab dead/blank, it's treated exactly like opening a
@@ -251,6 +378,7 @@ public class ShellScript {
           "shellTeardownCurrentTabs();" +
           "shellSessionId=shellGenerateSessionId();" +
           "try{ sessionStorage.setItem(SESSION_ID_KEY, shellSessionId); }catch(e){}" +
+          "shellApplyDriveSidebar(false);" +
           "shellGroups=[]; shellGroupCounter=0; shellTabs=[]; shellTabCounter=0;" +
           "openTab('/dashboard','Dashboard');" +
           "shellTouchHeartbeat();" +
@@ -325,7 +453,9 @@ public class ShellScript {
             "e.dataTransfer.effectAllowed='move';" +
             "try{ e.dataTransfer.setData('text/plain', id); }catch(err){}" +
           "});" +
-          "btn.addEventListener('dragover', function(e){ shellTabDragOver(e, id); });" +
+          "btn.addEventListener('dragover', function(e){" +
+            "if(shellDragGroupId){ shellGroupDragOverTab(e, id); } else { shellTabDragOver(e, id); }" +
+          "});" +
           "btn.addEventListener('dragend', function(){" +
             "btn.classList.remove('dragging');" +
             "shellDragTabId=null;" +
@@ -394,6 +524,85 @@ public class ShellScript {
           "var order=Array.prototype.map.call(document.querySelectorAll('#tabbar .tab'), function(el){ return el.id; });" +
           "shellTabs.sort(function(a,b){ return order.indexOf(a.id)-order.indexOf(b.id); });" +
           "shellNormalizeGroups();" +
+          "shellSaveState();" +
+          "shellRenderTabBar();" +
+        "}" +
+
+        // ---- Dragging a whole group ("folder") to reorder it among the
+        // top-level tabbar items, same as dragging an individual tab does.
+        // Unlike tab-dragging (which only ever moves one element), a group
+        // drag has to move its header AND every one of its member tabs
+        // together as a single block - shellMoveGroupBlockBefore() collects
+        // those nodes and re-inserts them, in their existing relative
+        // order, right before whatever the drag is currently hovering
+        // over. A collapsed group's member tabs aren't in the DOM at all
+        // (see shellRenderTabBar) so the "block" is just its header in that
+        // case, which is exactly the visual behavior wanted anyway.
+        "function shellMoveGroupBlockBefore(groupId, refNode){" +
+          "var tabbar=document.getElementById('tabbar');" +
+          "var header=shellGroupHeaderEls[groupId];" +
+          "var nodes=[];" +
+          "if(header) nodes.push(header);" +
+          "Array.prototype.forEach.call(document.querySelectorAll('#tabbar .tab'), function(el){" +
+            "var t=shellTabs.find(function(tt){ return tt.id===el.id; });" +
+            "if(t && t.groupId===groupId) nodes.push(el);" +
+          "});" +
+          "nodes.forEach(function(el){ tabbar.insertBefore(el, refNode); });" +
+        "}" +
+        "function shellGroupDragOverHeader(e, overGroupId){" +
+          "if(!shellDragGroupId || shellDragGroupId===overGroupId) return;" +
+          "e.preventDefault();" +
+          "var overHeader=shellGroupHeaderEls[overGroupId];" +
+          "if(!overHeader) return;" +
+          "var rect=overHeader.getBoundingClientRect();" +
+          "var before=(e.clientX-rect.left)<rect.width/2;" +
+          "shellMoveGroupBlockBefore(shellDragGroupId, before?overHeader:overHeader.nextSibling);" +
+        "}" +
+        "function shellGroupDragOverTab(e, overTabId){" +
+          "if(!shellDragGroupId) return;" +
+          "var overTabObj=shellTabs.find(function(t){ return t.id===overTabId; });" +
+          // Hovering over one of the dragged group's own (expanded)
+          // member tabs is a no-op - it's already sitting right there.
+          "if(overTabObj && overTabObj.groupId===shellDragGroupId) return;" +
+          "e.preventDefault();" +
+          "var overEl=shellTabEls[overTabId];" +
+          "if(!overEl) return;" +
+          "var rect=overEl.getBoundingClientRect();" +
+          "var before=(e.clientX-rect.left)<rect.width/2;" +
+          "shellMoveGroupBlockBefore(shellDragGroupId, before?overEl:overEl.nextSibling);" +
+        "}" +
+        // The group-drag equivalent of shellSyncTabOrderFromDom(): reads
+        // back the top-level order of headers/ungrouped tabs the live
+        // dragover reordering above left the DOM in, and rebuilds shellTabs
+        // to match - each group's own member tabs keep whatever relative
+        // order they already had, only the group's position among its
+        // siblings changes.
+        "function shellSyncBlockOrderFromDom(){" +
+          "var newOrder=[];" +
+          "var handledGroups={};" +
+          "var nodes=document.querySelectorAll('#tabbar .tab-group-header, #tabbar .tab');" +
+          "Array.prototype.forEach.call(nodes, function(el){" +
+            "if(el.classList.contains('tab-group-header')){" +
+              "var gid=el.dataset.groupId;" +
+              "if(handledGroups[gid]) return;" +
+              "handledGroups[gid]=true;" +
+              "shellTabs.forEach(function(t){ if(t.groupId===gid) newOrder.push(t); });" +
+              "return;" +
+            "}" +
+            "var t=shellTabs.find(function(tt){ return tt.id===el.id; });" +
+            "if(!t) return;" +
+            "if(t.groupId){" +
+              "if(handledGroups[t.groupId]) return;" +
+              "handledGroups[t.groupId]=true;" +
+              "shellTabs.forEach(function(tt){ if(tt.groupId===t.groupId) newOrder.push(tt); });" +
+              "return;" +
+            "}" +
+            "newOrder.push(t);" +
+          "});" +
+          // Defensive: anything somehow missed (shouldn't happen) is
+          // appended rather than silently dropped.
+          "shellTabs.forEach(function(t){ if(newOrder.indexOf(t)===-1) newOrder.push(t); });" +
+          "shellTabs=newOrder;" +
           "shellSaveState();" +
           "shellRenderTabBar();" +
         "}" +
@@ -498,7 +707,27 @@ public class ShellScript {
           "header.addEventListener('click', function(){ toggleGroupCollapse(groupId); });" +
           "header.addEventListener('dblclick', function(e){ e.stopPropagation(); shellRenameGroup(groupId); });" +
           "header.addEventListener('contextmenu', function(e){ e.preventDefault(); e.stopPropagation(); showGroupContextMenu(e.clientX, e.clientY, groupId); });" +
-          "header.addEventListener('dragover', function(e){ if(shellDragTabId) e.preventDefault(); });" +
+          // Draggable exactly like an individual tab (see
+          // shellBuildTabElement) - dragging the header moves the whole
+          // group (header + member tabs) as one block; see
+          // shellMoveGroupBlockBefore()/shellSyncBlockOrderFromDom() above.
+          "header.draggable=true;" +
+          "header.addEventListener('dragstart', function(e){" +
+            "shellDragGroupId=groupId;" +
+            "header.classList.add('dragging');" +
+            "e.dataTransfer.effectAllowed='move';" +
+            "try{ e.dataTransfer.setData('text/plain', 'group:'+groupId); }catch(err){}" +
+            "e.stopPropagation();" +
+          "});" +
+          "header.addEventListener('dragend', function(){" +
+            "header.classList.remove('dragging');" +
+            "shellDragGroupId=null;" +
+            "shellSyncBlockOrderFromDom();" +
+          "});" +
+          "header.addEventListener('dragover', function(e){" +
+            "if(shellDragTabId){ e.preventDefault(); return; }" +
+            "if(shellDragGroupId){ shellGroupDragOverHeader(e, groupId); }" +
+          "});" +
           "header.addEventListener('drop', function(e){" +
             "e.preventDefault();" +
             "if(shellDragTabId) shellAssignTabToGroup(shellDragTabId, groupId);" +
@@ -739,14 +968,25 @@ public class ShellScript {
         "window.addEventListener('blur', hideTabContextMenu);" +
 
         // ---- Address bar (press "/" to open, type/click to browse, Enter to go) ----
+        // In the Google Drive session, this branches into a different mode
+        // (see the shellSessionId===GDRIVE_SESSION_ID checks below): Drive
+        // items don't have one true hierarchical path the way local files
+        // do (see GDriveBrowseHandler.java's class comment), so rather than
+        // faking a path picker, typing here live-searches Drive by name
+        // (via /gdrive-suggest) and picking a folder jumps straight to it;
+        // hitting Enter with nothing picked runs a full /gdrive-search
+        // instead of a folder navigation.
         "function openAddressBar(){" +
           "var overlay=document.getElementById('addressBarOverlay');" +
           "var input=document.getElementById('addressBarInput');" +
           "var prefill='';" +
-          "var activeTab=shellTabs.find(function(t){ return t.id===shellActiveTabId; });" +
-          "if(activeTab && activeTab.url.indexOf('/browse?path=')===0){" +
-            "prefill=decodeURIComponent(activeTab.url.substring('/browse?path='.length));" +
+          "if(shellSessionId!==GDRIVE_SESSION_ID){" +
+            "var activeTab=shellTabs.find(function(t){ return t.id===shellActiveTabId; });" +
+            "if(activeTab && activeTab.url.indexOf('/browse?path=')===0){" +
+              "prefill=decodeURIComponent(activeTab.url.substring('/browse?path='.length));" +
+            "}" +
           "}" +
+          "input.placeholder=(shellSessionId===GDRIVE_SESSION_ID)?'Search Google Drive by name...':'';" +
           "input.value=prefill;" +
           "overlay.classList.add('open');" +
           "input.focus();" +
@@ -776,10 +1016,24 @@ public class ShellScript {
         "}" +
 
         "function goToAddressBarPath(){" +
+          "if(shellSessionId===GDRIVE_SESSION_ID){" +
+            "var q=document.getElementById('addressBarInput').value.trim();" +
+            "closeAddressBar();" +
+            "if(q){ navigateCurrentTab('/gdrive-search?q='+encodeURIComponent(q)); }" +
+            "return;" +
+          "}" +
           "var normalized=normalizeAddressBarInput(document.getElementById('addressBarInput').value);" +
           "while(normalized.endsWith('/')) normalized=normalized.slice(0,-1);" +
           "closeAddressBar();" +
           "navigateCurrentTab('/browse?path='+encodeURIComponent(normalized));" +
+        "}" +
+
+        // Drive mode: jump straight into a specific folder found by name
+        // search - see the class-level comment on this whole address bar
+        // section for why this doesn't try to build a multi-level path.
+        "function goToDriveAddressItem(id, name){" +
+          "closeAddressBar();" +
+          "navigateCurrentTab('/gdrive?path='+encodeURIComponent(id)+'|'+encodeURIComponent(name));" +
         "}" +
 
         // Splits the current input into "the folder we're listing" (up to
@@ -792,6 +1046,14 @@ public class ShellScript {
         "function updateAddressSuggestions(){" +
           "clearTimeout(addressSuggestDebounce);" +
           "addressSuggestDebounce=setTimeout(function(){" +
+            "if(shellSessionId===GDRIVE_SESSION_ID){" +
+              "var q=document.getElementById('addressBarInput').value.trim();" +
+              "if(!q){ renderAddressSuggestions([], ''); return; }" +
+              "fetch('/gdrive-suggest?q='+encodeURIComponent(q)+'&foldersOnly=1').then(function(r){return r.json();})" +
+                ".then(function(items){ renderDriveAddressSuggestions(items); })" +
+                ".catch(function(){ renderDriveAddressSuggestions([]); });" +
+              "return;" +
+            "}" +
             "var normalized=normalizeAddressBarInput(document.getElementById('addressBarInput').value);" +
             "var lastSlash=normalized.lastIndexOf('/');" +
             "var dirPart=lastSlash===-1?'':normalized.substring(0,lastSlash);" +
@@ -814,6 +1076,28 @@ public class ShellScript {
             "return '<div class=\"address-suggestion-item\" data-address-path=\"'+p+'\">&#128193; '+f.name+'</div>';" +
           "}).join('');" +
           "box.classList.add('open');" +
+        "}" +
+        // Drive mode: each result carries its own Drive id (needed to
+        // navigate straight to it - see goToDriveAddressItem() above) and
+        // shows a file icon rather than always a folder one, since a
+        // name search naturally turns up files too even though only
+        // folders get the foldersOnly=1 filter here... actually foldersOnly
+        // is passed, so these are always folders, but the icon stays
+        // explicit rather than assumed in case that filter is ever relaxed.
+        "function renderDriveAddressSuggestions(items){" +
+          "var box=document.getElementById('addressBarSuggestions');" +
+          "addressActiveIndex=-1;" +
+          "if(!items.length){ box.innerHTML=''; box.classList.remove('open'); return; }" +
+          "box.innerHTML=items.map(function(it){" +
+            "var idAttr=String(it.id).replace(/\"/g,'&quot;');" +
+            "var nameAttr=String(it.name).replace(/\"/g,'&quot;');" +
+            "return '<div class=\"address-suggestion-item\" data-address-drive-id=\"'+idAttr+'\" data-address-drive-name=\"'+nameAttr+'\">'+" +
+              "(it.type==='folder'?'&#128193; ':'&#128196; ')+PathUtil_escapeHtmlJs(it.name)+'</div>';" +
+          "}).join('');" +
+          "box.classList.add('open');" +
+        "}" +
+        "function PathUtil_escapeHtmlJs(s){" +
+          "var d=document.createElement('div'); d.textContent=String(s); return d.innerHTML;" +
         "}" +
         // Highlights whichever suggestion Up/Down has landed on and keeps
         // it scrolled into view, so navigating a long folder list by
@@ -853,6 +1137,10 @@ public class ShellScript {
         "document.addEventListener('click', function(e){" +
           "var item=e.target.closest('.address-suggestion-item');" +
           "if(!item) return;" +
+          "if(item.dataset.addressDriveId!==undefined){" +
+            "goToDriveAddressItem(item.dataset.addressDriveId, item.dataset.addressDriveName);" +
+            "return;" +
+          "}" +
           "var input=document.getElementById('addressBarInput');" +
           "input.value='/'+item.dataset.addressPath+'/';" +
           "input.focus();" +
@@ -861,6 +1149,7 @@ public class ShellScript {
 
         "document.addEventListener('DOMContentLoaded', function(){" +
           "if(!shellLoadState()){ openTab('/dashboard','Dashboard'); }" +
+          "shellApplyDriveSidebar(shellSessionId===GDRIVE_SESSION_ID);" +
         "});" +
         "</script>";
 }
