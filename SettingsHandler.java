@@ -62,6 +62,16 @@ public class SettingsHandler implements HttpHandler {
             result = AutostartManager.enable();
         } else if ("disable-autostart".equals(action)) {
             result = AutostartManager.disable();
+        } else if ("save-gdrive-credentials".equals(action)) {
+            String clientId = formParam(body, "gdriveClientId");
+            String clientSecret = formParam(body, "gdriveClientSecret");
+            if (clientId == null || clientId.trim().isEmpty()) {
+                result = "Enter a Client ID first.";
+            } else {
+                GDriveAuth.setClientCredentials(clientId, clientSecret);
+            }
+        } else if ("disconnect-gdrive".equals(action)) {
+            GDriveAuth.disconnect();
         }
 
         String redirect = result == null
@@ -145,6 +155,45 @@ public class SettingsHandler implements HttpHandler {
         sb.append("</form>");
         sb.append("</div>");
 
+        // Google Drive
+        sb.append("<div class='settings-section'>");
+        sb.append("<h2>Google Drive</h2>");
+        sb.append("<p class='settings-desc'>Browse a connected Google Drive account through the same card-grid UI as your local files, ")
+          .append("from its own pinned session in the <a href=\"/sessions\" onclick=\"if(parent&&parent.navigateCurrentTab){ parent.navigateCurrentTab('/sessions'); return false; }\">Session Manager</a>. ")
+          .append("Read-only for now - browsing and downloading, no uploads/renames/deletes against Drive yet.</p>");
+
+        if (GDriveAuth.isConnected()) {
+            String gdriveEmail = GDriveAuth.getEmail();
+            sb.append("<p class='settings-current'>Connected as: <strong>")
+              .append(gdriveEmail != null ? PathUtil.htmlEscape(gdriveEmail) : "(unknown account)").append("</strong></p>");
+            sb.append("<form method='POST' action='/settings' class='settings-form'>");
+            sb.append("<input type='hidden' name='action' value='disconnect-gdrive'>");
+            sb.append("<button type='submit'>Disconnect</button>");
+            sb.append("</form>");
+        } else {
+            sb.append("<p class='settings-hint'>This app has no Google credentials of its own - connecting means creating your own free ")
+              .append("Google Cloud OAuth client and pointing it here:</p>");
+            sb.append("<ol class='settings-steps'>");
+            sb.append("<li>In <a href=\"https://console.cloud.google.com/apis/credentials\" target=\"_blank\" rel=\"noopener\">Google Cloud Console \u2192 Credentials</a>, create an OAuth client of type <strong>Desktop app</strong>.</li>");
+            sb.append("<li>Enable the <strong>Google Drive API</strong> for that project.</li>");
+            sb.append("<li>Add this as an <strong>Authorized redirect URI</strong> on the OAuth client: <code>")
+              .append(PathUtil.htmlEscape(GDriveAuth.redirectUri())).append("</code></li>");
+            sb.append("<li>Paste the resulting Client ID (and Client Secret, if Google gives you one) below.</li>");
+            sb.append("</ol>");
+            sb.append("<form method='POST' action='/settings' class='settings-form settings-form-stacked'>");
+            sb.append("<input type='hidden' name='action' value='save-gdrive-credentials'>");
+            sb.append("<input type='text' name='gdriveClientId' placeholder='Client ID' value='")
+              .append(GDriveAuth.getClientId() != null ? PathUtil.htmlEscape(GDriveAuth.getClientId()) : "").append("'>");
+            sb.append("<input type='text' name='gdriveClientSecret' placeholder='Client Secret (optional)' value='")
+              .append(GDriveAuth.getClientSecret() != null ? PathUtil.htmlEscape(GDriveAuth.getClientSecret()) : "").append("'>");
+            sb.append("<button type='submit'>Save</button>");
+            sb.append("</form>");
+            if (GDriveAuth.isConfigured()) {
+                sb.append("<p class='settings-hint'><a class='settings-connect-link' href='/gauth/start'>Connect Google Drive \u2192</a></p>");
+            }
+        }
+        sb.append("</div>");
+
         // Other settings ideas (not implemented, just documented)
         sb.append("<div class='settings-section settings-ideas'>");
         sb.append("<h2>Other settings ideas</h2>");
@@ -183,6 +232,14 @@ public class SettingsHandler implements HttpHandler {
             ".settings-form button{padding:8px 16px;border:none;background:#2563eb;color:#fff;border-radius:6px;cursor:pointer;font-size:13px;}" +
             ".settings-form button:hover{background:#1d4ed8;}" +
             ".settings-hint{color:#888;font-size:12px;margin:10px 0 0;line-height:1.5;}" +
+            ".settings-steps{color:#555;font-size:13px;line-height:1.8;margin:0 0 14px;padding-left:20px;}" +
+            ".settings-steps code{background:#f4f5f7;padding:1px 5px;border-radius:4px;font-size:12px;word-break:break-all;}" +
+            ".settings-form-stacked{flex-direction:column;align-items:stretch;max-width:420px;}" +
+            ".settings-form-stacked input{width:100%;margin-bottom:2px;}" +
+            ".settings-form-stacked button{align-self:flex-start;}" +
+            ".settings-connect-link{display:inline-block;background:#2563eb;color:#fff;padding:8px 16px;border-radius:6px;" +
+              "text-decoration:none;font-size:13px;margin-top:4px;}" +
+            ".settings-connect-link:hover{background:#1d4ed8;}" +
             ".settings-ideas ul{margin:0;padding-left:20px;color:#555;font-size:13px;line-height:1.9;}" +
             "</style>";
     }

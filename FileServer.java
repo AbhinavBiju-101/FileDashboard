@@ -73,6 +73,11 @@ public class FileServer {
         addContext(server, "/trash-browse", new TrashBrowseHandler());
         addContext(server, "/trash-file", new TrashFileHandler());
         addContext(server, "/sessions", new SessionsHandler());
+        GoogleAuthHandler gAuth = new GoogleAuthHandler();
+        addContext(server, "/gauth/start", gAuth);
+        addContext(server, "/gauth/callback", gAuth);
+        addContext(server, "/gdrive", new GDriveBrowseHandler());
+        addContext(server, "/gdrive-file", new GDriveDownloadHandler());
         addContext(server, "/viewer", new ViewerHandler());
         addContext(server, "/save-text", new SaveTextHandler());
         addContext(server, "/reveal", new RevealHandler());

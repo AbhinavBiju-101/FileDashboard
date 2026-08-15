@@ -158,29 +158,75 @@ public class ShellScript {
           "}catch(e){ return false; }" +
         "}" +
 
-        // Called from the Session Manager page (via
-        // window.parent.shellLoadSession(id)) to switch THIS browser tab
-        // onto a different, currently-inactive session - tearing down every
-        // tab/iframe it has open now and rebuilding from the target
-        // session's saved tabs/groups. The session this tab is leaving
-        // behind isn't deleted - it stays in history exactly as last saved,
-        // just idle (its heartbeat entry is released) until something
-        // reopens it.
-        "function shellLoadSession(targetId){" +
-          "if(!targetId || targetId===shellSessionId) return false;" +
-          "if(shellIsSessionActive(targetId)){ alert('That session is currently open in another tab.'); return false; }" +
-          "var sessions=shellLoadSessionsMap();" +
-          "var s=sessions[targetId];" +
-          "if(!s){ alert('That session no longer exists.'); return false; }" +
+        // A fixed, well-known session id for the pinned "Google Drive"
+        // session shown in Session Manager (see SessionsHandler.java) -
+        // using a fixed id rather than one shellGenerateSessionId() would
+        // produce means it can be opened even before it's ever been saved
+        // once, by synthesizing a default entry for it below.
+        "var GDRIVE_SESSION_ID='session-gdrive';" +
 
-          "shellReleaseHeartbeat();" +
+        // Cross-tab messaging for "Close & open here" (Session Manager's
+        // force-reopen action): posting a force-close message is how one
+        // browser tab tells another, currently-active one to give up its
+        // session. BroadcastChannel isn't universally available (older
+        // Safari), so everything here treats it as optional - the request
+        // still gets sent as best-effort via localStorage's own change
+        // (see the optimistic heartbeat clear in shellLoadSession), it just
+        // won't be instant if the channel itself is unsupported.
+        "var shellSessionChannel=null;" +
+        "try{ shellSessionChannel=new BroadcastChannel('fd-sessions'); }catch(e){ shellSessionChannel=null; }" +
 
+        // Shared by shellLoadSession() (switching to a different session
+        // deliberately) and shellHandleForcedClose() (being kicked off this
+        // session by another tab) - both need to fully clear out the
+        // current tab bar/iframes/toasts before loading something else in
+        // their place.
+        "function shellTeardownCurrentTabs(){" +
           "Object.keys(shellToastEls||{}).forEach(function(cid){ shellRemoveReopenToast(cid); });" +
           "shellClosedTabsStack=[];" +
           "Object.keys(shellTabEls).forEach(function(id){ var el=shellTabEls[id]; if(el&&el.parentNode) el.parentNode.removeChild(el); });" +
           "shellTabEls={};" +
           "shellGroupHeaderEls={};" +
           "Array.prototype.slice.call(document.querySelectorAll('.tabcontent iframe')).forEach(function(f){ f.remove(); });" +
+        "}" +
+
+        // Called from the Session Manager page (via
+        // window.parent.shellLoadSession(id[, force])) to switch THIS
+        // browser tab onto a different session - tearing down every
+        // tab/iframe it has open now and rebuilding from the target
+        // session's saved tabs/groups. The session this tab is leaving
+        // behind isn't deleted - it stays in history exactly as last saved,
+        // just idle (its heartbeat entry is released) until something
+        // reopens it.
+        //
+        // force=true is "Close & open here": if the target is active in
+        // another browser tab right now, that tab is told to give up the
+        // session (via BroadcastChannel, handled by shellHandleForcedClose
+        // below) rather than refusing the whole operation. Its heartbeat is
+        // also cleared right away as a fallback for browsers without
+        // BroadcastChannel, or in case that tab is backgrounded/throttled
+        // and slow to react - meaning there's a brief window where both
+        // tabs could believe they own the session until the other one
+        // catches up. Acceptable for what this is; not a real distributed
+        // lock.
+        "function shellLoadSession(targetId, force){" +
+          "if(!targetId || targetId===shellSessionId) return false;" +
+          "var activeElsewhere=shellIsSessionActive(targetId);" +
+          "if(activeElsewhere && !force){ alert('That session is currently open in another tab.'); return false; }" +
+          "var sessions=shellLoadSessionsMap();" +
+          "var s=sessions[targetId];" +
+          "if(!s && targetId===GDRIVE_SESSION_ID){" +
+            "s={id:GDRIVE_SESSION_ID, name:'Google Drive', tabs:[{id:'tab-gdrive-1', url:'/gdrive?path=', title:'Google Drive', groupId:null}], groups:[], active:'tab-gdrive-1'};" +
+          "}" +
+          "if(!s){ alert('That session no longer exists.'); return false; }" +
+
+          "if(activeElsewhere && force){" +
+            "if(shellSessionChannel){ shellSessionChannel.postMessage({type:'force-close', sessionId:targetId}); }" +
+            "var hb=shellLoadHeartbeats(); delete hb[targetId]; shellSaveHeartbeats(hb);" +
+          "}" +
+
+          "shellReleaseHeartbeat();" +
+          "shellTeardownCurrentTabs();" +
 
           "shellSessionId=targetId;" +
           "try{ sessionStorage.setItem(SESSION_ID_KEY, shellSessionId); }catch(e){}" +
@@ -190,7 +236,7 @@ public class ShellScript {
           "},0);" +
           "shellTabs=s.tabs||[];" +
           "shellTabCounter=shellTabs.reduce(function(m,t){" +
-            "var n=parseInt(t.id.replace('tab-',''),10); return isNaN(n)?m:Math.max(m,n);" +
+            "var n=parseInt((t.id||'').replace('tab-',''),10); return isNaN(n)?m:Math.max(m,n);" +
           "},0);" +
           "if(shellTabs.length){" +
             "shellTabs.forEach(function(t){ shellCreateTab(t.id, t.url, t.title); });" +
@@ -201,6 +247,28 @@ public class ShellScript {
           "shellTouchHeartbeat();" +
           "shellSaveState();" +
           "return true;" +
+        "}" +
+
+        // The other end of "Close & open here": some other browser tab has
+        // just claimed this tab's session out from under it. Rather than
+        // leaving this tab dead/blank, it's treated exactly like opening a
+        // genuinely new browser tab would be - a fresh, empty session on
+        // Dashboard - so it stays fully usable, just no longer hosting the
+        // session that moved elsewhere.
+        "function shellHandleForcedClose(){" +
+          "shellReleaseHeartbeat();" +
+          "shellTeardownCurrentTabs();" +
+          "shellSessionId=shellGenerateSessionId();" +
+          "try{ sessionStorage.setItem(SESSION_ID_KEY, shellSessionId); }catch(e){}" +
+          "shellGroups=[]; shellGroupCounter=0; shellTabs=[]; shellTabCounter=0;" +
+          "openTab('/dashboard','Dashboard');" +
+          "shellTouchHeartbeat();" +
+        "}" +
+        "if(shellSessionChannel){" +
+          "shellSessionChannel.addEventListener('message', function(ev){" +
+            "var msg=ev.data;" +
+            "if(msg && msg.type==='force-close' && msg.sessionId===shellSessionId){ shellHandleForcedClose(); }" +
+          "});" +
         "}" +
         "window.addEventListener('pagehide', shellReleaseHeartbeat);" +
 

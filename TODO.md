@@ -1,9 +1,11 @@
 # TODO — continue here
 
 ## Just added, NOT tested at all — verify these first
-This session had no working `javac`/JDK in the sandbox either, so nothing
-below was compiled or run as a real server. Node.js *was* available this
-time, so every embedded-JS string (`ShellScript.java`'s `SCRIPT`,
+This session had no working `javac`/JDK in the sandbox, and no network
+access to google.com or any Google API - so on top of nothing below being
+compiled or run as a real server, item 11's Google OAuth/Drive API calls
+specifically have never actually talked to Google even once. Node.js *was*
+available, so every embedded-JS string (`ShellScript.java`'s `SCRIPT`,
 `PageScripts.java`'s `SCRIPT`, and `SessionsHandler.java`'s `SCRIPT`) was
 mechanically extracted and passed through `node --check` to at least confirm
 they're syntactically valid JS - that catches typos/unbalanced
@@ -12,6 +14,81 @@ don't exist, wrong argument order, and so on).
 Please build it for real and click through these before trusting them.
 `build/` and `FileDashboard.jar` are stale if present - rebuild via
 `build-jar.bat` or BlueJ.
+
+11. **"Close & open here" + Google Drive integration** — two additions on
+    top of item 10's Sessions:
+
+    - **Close & open here**: in Session Manager, a session that's active in
+      *another* browser tab now gets a second button alongside the disabled
+      "Open" one. Clicking it force-reopens that session here: it posts a
+      `BroadcastChannel('fd-sessions')` message telling the other tab to let
+      go (handled there by the new `shellHandleForcedClose()`, which turns
+      that tab into a fresh empty session rather than leaving it dead), and
+      also optimistically clears the target's heartbeat entry directly as a
+      fallback for browsers without `BroadcastChannel` or a
+      backgrounded/throttled other tab. There's a real, acknowledged race
+      here: for a brief window both tabs could believe they own the
+      session until the other one catches up - this is not a real
+      distributed lock, just a best-effort UX nicety. A confirm() warns
+      that unsaved work in the other tab (e.g. mid-edit in a text file tab)
+      could be lost, since forcing the other tab closed doesn't give it a
+      chance to save anything first. Verify: open the same session active
+      in two tabs via force-reopen, confirm the "losing" tab lands
+      cleanly on a fresh Dashboard rather than breaking; test with
+      `BroadcastChannel` unavailable (should still work via the heartbeat
+      fallback, just possibly slower for the other tab to notice).
+
+    - **Google Drive**: a pinned "☁ Google Drive" row always shows in
+      Session Manager (synthesized client-side if it's never been opened,
+      via `GDRIVE_SESSION_ID='session-gdrive'` - see `SessionsHandler.java`
+      and `shellLoadSession()`'s special-case in `ShellScript.java`).
+      Opening it browses a connected Drive account through `/gdrive`
+      (`GDriveBrowseHandler.java`), reusing the exact same
+      `.grid`/`.card`/`.icon`/`.name`/`.meta` CSS classes as local
+      Browse/Dashboard so it looks native rather than bolted on. New
+      pieces: `GDriveAuth.java` (OAuth2 + PKCE, token storage/refresh in
+      `~/.filedashboard/gdrive.json`), `GDriveClient.java` (thin Drive API
+      v3 wrapper - list a folder's children, get one file's metadata, and
+      stream its bytes), `GoogleAuthHandler.java` (`/gauth/start` +
+      `/gauth/callback`, the actual redirect round trip),
+      `GDriveBrowseHandler.java` (`/gdrive`), `GDriveDownloadHandler.java`
+      (`/gdrive-file`, proxies a file's bytes back through this server
+      rather than sending the browser to Google directly), and a new
+      "Google Drive" section in `SettingsHandler.java` showing the
+      connected account (or the Client ID/Secret form + setup steps if
+      not).
+
+      **This has not been connected to a real Google account even once** -
+      no network access to any google.com domain existed anywhere in this
+      session, so beyond `node --check` on the JS and careful line-by-line
+      review of the Java, none of the actual OAuth exchange, token refresh,
+      or Drive API JSON parsing has been exercised. Before trusting it:
+      create a real Google Cloud OAuth client (Settings has the exact
+      steps + redirect URI to register), connect it, and walk through
+      folder navigation, a native Google Doc (should show "Open" only, no
+      "Download"), a regular file (should show both, and the download
+      should actually work), disconnecting, and reconnecting. Also worth
+      specifically checking: does Google's token response actually omit
+      `refresh_token` on every call after the very first consent (this
+      assumes so, via `applyTokenResponse()`'s "only present on the very
+      first exchange, usually" comment - if that assumption is wrong
+      somewhere, refresh could silently stop working after the token
+      cache is cleared some other way); does a "Desktop app" OAuth client
+      actually accept the token exchange without `client_secret` (PKCE
+      should make it optional per Google's docs, but this is exactly the
+      kind of detail worth confirming against the real API rather than
+      docs).
+
+      Deliberately out of scope for this pass, to keep it reviewable:
+      **read-only** (browse + view/download only - no upload, rename,
+      move, or delete against Drive), **no pagination** (folders cap at
+      200 items via a single `files.list` call), **no thumbnails** (icons
+      only, by mime-type/extension - real Drive thumbnails need either
+      hot-linking `thumbnailLink` with its own auth quirks or another
+      proxy endpoint, skipped for now), and **no export for native Google
+      Docs/Sheets/Slides** (`files.export` isn't implemented, so those can
+      only be opened in Google's own UI via "Open", not downloaded as
+      e.g. a `.docx`/`.xlsx`).
 
 10. **Sessions** — every *browser tab* of File Dashboard is now its own
     "session": its own tab bar, its own groups, kept completely separate
@@ -149,6 +226,11 @@ Please build it for real and click through these before trusting them.
   there are effectively lost on first load after upgrading. Didn't seem
   worth writing one-time migration code for a dev tool with no real users
   yet, but flagging it in case that assumption is wrong.
+- `~/.filedashboard/gdrive.json` (item 11) holds a real OAuth refresh
+  token once connected - same file-permission tightening as the rest of
+  Config.DATA_DIR, but worth being aware it's meaningfully more sensitive
+  than `settings.json` sitting right next to it, and isn't encrypted at
+  rest.
 
 ## Testing method used previous sessions (not available this one)
 Built + ran the real server in the sandbox, hit endpoints with curl, and for

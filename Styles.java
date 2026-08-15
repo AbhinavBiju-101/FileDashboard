@@ -63,6 +63,9 @@ public class Styles {
         ".session-btn-primary{background:#2563eb;border-color:#2563eb;color:#fff;}" +
         ".session-btn-primary:hover{background:#1d4ed8;}" +
         ".session-btn-danger:hover{background:#fdecea;border-color:#f3b4ae;color:#c00;}" +
+        ".session-btn-warning{background:#fff8e6;border-color:#f0d99a;color:#8a5a00;}" +
+        ".session-btn-warning:hover{background:#fdf0cc;}" +
+        ".session-icon{font-size:13px;}" +
         ".session-btn:disabled{opacity:.45;cursor:not-allowed;}" +
         ".session-btn:disabled:hover{background:#f4f5f7;color:#333;}" +
         ".session-btn-primary:disabled:hover{background:#2563eb;color:#fff;}" +
