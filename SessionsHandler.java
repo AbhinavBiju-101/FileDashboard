@@ -52,8 +52,7 @@ public class SessionsHandler implements HttpHandler {
         sb.append("<p class='session-intro'>Every new browser tab you open on File Dashboard starts its own session - ")
           .append("its own set of tabs, kept separate from whatever else you have open. A session can only be open in ")
           .append("one browser tab at a time, so reopening one below moves it here (or, if it's open somewhere else, ")
-          .append("\"Close &amp; open here\" closes it there first). The pinned \u2601 Google Drive session browses a connected ")
-          .append("Drive account - connect one from Settings.</p>");
+          .append("\"Close &amp; open here\" closes it there first).</p>");
 
         sb.append("<div id='sessionList' class='session-list'><p class='empty'>Loading...</p></div>");
 
@@ -72,11 +71,6 @@ public class SessionsHandler implements HttpHandler {
         // than this, otherwise it's treated as safely reopenable even if
         // its owning tab never got a clean shutdown (crash, force-quit).
         "var HEARTBEAT_STALE_MS=10000;" +
-        // A fixed, well-known id (rather than one shellGenerateSessionId()
-        // would produce) so this row can always be found/recognized, even
-        // before it's ever actually been opened once - see the synthesized
-        // placeholder in renderSessions() below.
-        "var GDRIVE_SESSION_ID='session-gdrive';" +
 
         "function fdFormatDate(ts){" +
           "var d=new Date(ts);" +
@@ -108,47 +102,32 @@ public class SessionsHandler implements HttpHandler {
         "function renderSessions(){" +
           "var list=document.getElementById('sessionList');" +
           "var sessions=loadSessionsMap();" +
-          // The Google Drive session is always shown, even the very first
-          // time - before it's ever actually been opened, it won't exist in
-          // the saved map yet, so a placeholder is synthesized here purely
-          // for display (never written back) until shellLoadSession()
-          // creates the real entry the first time someone opens it.
-          "if(!sessions[GDRIVE_SESSION_ID]){" +
-            "sessions=Object.assign({}, sessions);" +
-            "sessions[GDRIVE_SESSION_ID]={id:GDRIVE_SESSION_ID, name:'Google Drive', tabs:[], groups:[], createdAt:0, updatedAt:0};" +
-          "}" +
           "var ids=Object.keys(sessions);" +
           "if(!ids.length){ list.innerHTML=\"<p class='empty'>No sessions yet.</p>\"; return; }" +
           "var mine=currentSessionId();" +
           "ids.sort(function(a,b){" +
-            "if(a===GDRIVE_SESSION_ID) return -1;" +
-            "if(b===GDRIVE_SESSION_ID) return 1;" +
             "return (sessions[b].updatedAt||0)-(sessions[a].updatedAt||0);" +
           "});" +
           "list.innerHTML=ids.map(function(id){" +
             "var s=sessions[id];" +
-            "var pinned=(id===GDRIVE_SESSION_ID);" +
             "var active=isSessionActive(id);" +
             "var isMine=(id===mine);" +
             "var badge=isMine?\"<span class='session-badge session-badge-current'>This tab</span>\":" +
               "(active?\"<span class='session-badge session-badge-active'>Open in another tab</span>\":'');" +
-            "var icon=pinned?\"<span class='session-icon' title='Google Drive'>&#9729;</span>\":'';" +
             "var tabCount=(s.tabs||[]).length;" +
             "var name=escapeHtml(s.name||'Untitled session');" +
             "var locked=(isMine||active);" +
-            "var metaLine=pinned&&!s.updatedAt?" +
-              "'Browse a connected Google Drive account':" +
-              "(tabCount+' tab'+(tabCount===1?'':'s')+' &middot; updated '+fdFormatDate(s.updatedAt||s.createdAt||Date.now()));" +
+            "var metaLine=tabCount+' tab'+(tabCount===1?'':'s')+' &middot; updated '+fdFormatDate(s.updatedAt||s.createdAt||Date.now());" +
             "return \"<div class='session-row' data-session-id=\\\"\"+id+\"\\\">\" +" +
               "\"<div class='session-info'>\" +" +
-                "\"<div class='session-name-row'>\"+icon+\"<span class='session-name'>\"+name+\"</span>\"+badge+\"</div>\" +" +
+                "\"<div class='session-name-row'><span class='session-name'>\"+name+\"</span>\"+badge+\"</div>\" +" +
                 "\"<div class='session-meta'>\"+metaLine+\"</div>\" +" +
               "\"</div>\" +" +
               "\"<div class='session-actions'>\" +" +
                 "\"<button class='session-btn' data-session-action='rename'>Rename</button>\" +" +
                 "(active&&!isMine?\"<button class='session-btn session-btn-warning' data-session-action='close-open-here' title='Close it in that tab and open it here'>Close &amp; open here</button>\":'') +" +
                 "\"<button class='session-btn session-btn-primary' data-session-action='open'\"+(locked?' disabled':'')+\" title=\\\"\"+(locked?(isMine?'This is the session currently open in this tab':'Already open in another tab'):'')+\"\\\">Open</button>\" +" +
-                "(pinned?'':\"<button class='session-btn session-btn-danger' data-session-action='delete'\"+(locked?' disabled':'')+\">Delete</button>\") +" +
+                "\"<button class='session-btn session-btn-danger' data-session-action='delete'\"+(locked?' disabled':'')+\">Delete</button>\" +" +
               "\"</div>\" +" +
             "\"</div>\";" +
           "}).join('');" +
@@ -162,7 +141,7 @@ public class SessionsHandler implements HttpHandler {
           "var action=btn.dataset.sessionAction;" +
           "if(action==='rename'){" +
             "var sessions=loadSessionsMap();" +
-            "var s=sessions[id]||{name:(id==='session-gdrive'?'Google Drive':'')};" +
+            "var s=sessions[id]||{name:''};" +
             "var name=prompt('Rename session:', s.name||'');" +
             "if(!name) return;" +
             "s.name=name;" +

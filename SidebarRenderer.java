@@ -46,6 +46,7 @@ public class SidebarRenderer {
         }
 
         sb.append("<div class='sidebar-divider'></div>");
+        sb.append(item("/gdrive?path=", "&#9729;", "Google Drive"));
         sb.append(item("/settings", "&#9881;", "Settings"));
 
         sb.append("</div></div>");

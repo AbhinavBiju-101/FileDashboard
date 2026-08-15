@@ -35,7 +35,7 @@ public class GoogleAuthHandler implements HttpHandler {
         try {
             redirectTo = GDriveAuth.beginAuth();
         } catch (IOException e) {
-            redirect(exchange, "/settings?err=" + PathUtil.urlEncode(e.getMessage()));
+            redirect(exchange, "/settings?gauth=1&err=" + PathUtil.urlEncode(e.getMessage()));
             return;
         }
         redirect(exchange, redirectTo);
@@ -45,31 +45,31 @@ public class GoogleAuthHandler implements HttpHandler {
         String query = exchange.getRequestURI().getRawQuery();
         String error = QueryUtil.getParam(query, "error");
         if (error != null) {
-            redirect(exchange, "/settings?err=" + PathUtil.urlEncode("Google sign-in was cancelled or denied."));
+            redirect(exchange, "/settings?gauth=1&err=" + PathUtil.urlEncode("Google sign-in was cancelled or denied."));
             return;
         }
         String code = QueryUtil.getParam(query, "code");
         String state = QueryUtil.getParam(query, "state");
         if (code == null || state == null) {
-            redirect(exchange, "/settings?err=" + PathUtil.urlEncode("Google's response was missing required parameters."));
+            redirect(exchange, "/settings?gauth=1&err=" + PathUtil.urlEncode("Google's response was missing required parameters."));
             return;
         }
         try {
             code = URLDecoder.decode(code, "UTF-8");
             state = URLDecoder.decode(state, "UTF-8");
         } catch (Exception e) {
-            redirect(exchange, "/settings?err=" + PathUtil.urlEncode("Google's response could not be read."));
+            redirect(exchange, "/settings?gauth=1&err=" + PathUtil.urlEncode("Google's response could not be read."));
             return;
         }
         try {
             GDriveAuth.completeAuth(code, state);
         } catch (IOException e) {
-            redirect(exchange, "/settings?err=" + PathUtil.urlEncode("Couldn't finish connecting Google Drive: " + e.getMessage()));
+            redirect(exchange, "/settings?gauth=1&err=" + PathUtil.urlEncode("Couldn't finish connecting Google Drive: " + e.getMessage()));
             return;
         }
         String email = GDriveAuth.getEmail();
         String msg = email != null ? ("Connected Google Drive as " + email + ".") : "Connected Google Drive.";
-        redirect(exchange, "/settings?msg=" + PathUtil.urlEncode(msg));
+        redirect(exchange, "/settings?gauth=1&msg=" + PathUtil.urlEncode(msg));
     }
 
     private void redirect(HttpExchange exchange, String location) throws IOException {

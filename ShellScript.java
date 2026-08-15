@@ -158,12 +158,6 @@ public class ShellScript {
           "}catch(e){ return false; }" +
         "}" +
 
-        // A fixed, well-known session id for the pinned "Google Drive"
-        // session shown in Session Manager (see SessionsHandler.java) -
-        // using a fixed id rather than one shellGenerateSessionId() would
-        // produce means it can be opened even before it's ever been saved
-        // once, by synthesizing a default entry for it below.
-        "var GDRIVE_SESSION_ID='session-gdrive';" +
 
         // Cross-tab messaging for "Close & open here" (Session Manager's
         // force-reopen action): posting a force-close message is how one
@@ -215,9 +209,6 @@ public class ShellScript {
           "if(activeElsewhere && !force){ alert('That session is currently open in another tab.'); return false; }" +
           "var sessions=shellLoadSessionsMap();" +
           "var s=sessions[targetId];" +
-          "if(!s && targetId===GDRIVE_SESSION_ID){" +
-            "s={id:GDRIVE_SESSION_ID, name:'Google Drive', tabs:[{id:'tab-gdrive-1', url:'/gdrive?path=', title:'Google Drive', groupId:null}], groups:[], active:'tab-gdrive-1'};" +
-          "}" +
           "if(!s){ alert('That session no longer exists.'); return false; }" +
 
           "if(activeElsewhere && force){" +

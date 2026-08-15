@@ -90,6 +90,27 @@ Please build it for real and click through these before trusting them.
       only be opened in Google's own UI via "Open", not downloaded as
       e.g. a `.docx`/`.xlsx`).
 
+      One addition since first writing this: `GDriveAuth.SCOPE` requests
+      `openid email profile` alongside `drive.readonly`, so the userinfo
+      call `completeAuth()` already makes also returns a name and profile
+      picture, not just the bare email - zero extra round trips. Settings
+      shows "Connected as [avatar] Name (email)".
+
+12. **Reverted: separate "Sign in with Google"** — a session in between
+    this one and the previous one added a standalone Google Identity
+    Services Sign In flow, independent of Drive access. Reverted per
+    feedback: splitting them didn't reduce the actual setup burden (the
+    Google Cloud Console steps are identical either way), and the
+    separate flow's "Web application" OAuth client requirement is
+    *more* setup, not less (it needs a Client Secret; the merged
+    single-flow "Desktop app" client below doesn't). `GoogleSignInHandler.java`
+    and the `/gauth/signin` route are gone. What's left from that
+    detour: `GDriveAuth.SCOPE` still requests `openid email profile`
+    alongside `drive.readonly` (folded into item 11's description
+    below), since that part - getting a name/picture from the same
+    userinfo call for free - was a genuine improvement regardless of
+    how many buttons front it.
+
 10. **Sessions** — every *browser tab* of File Dashboard is now its own
     "session": its own tab bar, its own groups, kept completely separate
     from any other browser tab of the app you have open. New

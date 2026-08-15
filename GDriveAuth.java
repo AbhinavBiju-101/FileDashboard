@@ -21,6 +21,18 @@ import java.util.concurrent.ConcurrentHashMap;
  * as Settings.java's settings.json, kept as a separate file since it holds
  * credentials rather than app preferences).
  *
+ * One combined consent flow handles both identity and Drive access - the
+ * requested scope includes openid/email/profile alongside drive.readonly,
+ * so the single userinfo call completeAuth() makes after the token exchange
+ * returns a name and profile picture too, not just an email. (An earlier
+ * version of this split "sign in" and "connect Drive" into two separate
+ * flows/buttons. That added a second consent screen and a second OAuth
+ * client-type requirement - Google Identity Services' Sign In button needs
+ * a "Web application" client with a JavaScript origin, which unlike a
+ * "Desktop app" client requires a Client Secret - without actually reducing
+ * the Google Cloud Console setup work, which is the same either way. Merged
+ * back into one flow, one Desktop app client, no Secret needed.)
+ *
  * This app has no server backend and no bundled client secret of its own -
  * connecting requires the person to create their own Google Cloud OAuth
  * client (Settings has the walkthrough + the exact redirect URI to
@@ -41,10 +53,14 @@ public class GDriveAuth {
 
     private static final java.io.File CONFIG_FILE = new java.io.File(Config.DATA_DIR, "gdrive.json");
 
-    // Read-only scope - this integration only browses/downloads, it never
-    // writes back to Drive (see GDriveBrowseHandler.java's class comment
-    // for why that's deliberate for this first pass).
-    public static final String SCOPE = "https://www.googleapis.com/auth/drive.readonly";
+    // drive.readonly is the only scope this integration actually needs -
+    // browsing/downloading, no writes back to Drive (see
+    // GDriveBrowseHandler.java's class comment for why that's deliberate
+    // for this first pass). openid/email/profile are along for the ride so
+    // the one userinfo call completeAuth() already makes also returns a
+    // name and profile picture - zero extra round trips for "Connected as
+    // Jane Doe (jane@gmail.com)" instead of just the bare email.
+    public static final String SCOPE = "openid email profile https://www.googleapis.com/auth/drive.readonly";
 
     private static volatile String clientId = null;
     private static volatile String clientSecret = null;
@@ -52,6 +68,8 @@ public class GDriveAuth {
     private static volatile String refreshToken = null;
     private static volatile long expiresAtMillis = 0;
     private static volatile String email = null;
+    private static volatile String name = null;
+    private static volatile String picture = null;
 
     // Short-lived, in-memory only: state -> PKCE code_verifier, for the
     // handful of seconds between redirecting to Google and it redirecting
@@ -84,6 +102,14 @@ public class GDriveAuth {
         return email;
     }
 
+    public static synchronized String getName() {
+        return name;
+    }
+
+    public static synchronized String getPicture() {
+        return picture;
+    }
+
     public static synchronized String getClientId() {
         return clientId;
     }
@@ -107,6 +133,8 @@ public class GDriveAuth {
         refreshToken = null;
         expiresAtMillis = 0;
         email = null;
+        name = null;
+        picture = null;
         save();
     }
 
@@ -138,12 +166,12 @@ public class GDriveAuth {
 
     // Finishes the flow: exchanges the authorization code for tokens (using
     // the verifier stashed under this state by beginAuth()), then fetches
-    // the connected account's email so Settings has something human to
-    // show instead of just "Connected".
+    // the connected account's name/email/picture so Settings has something
+    // human to show instead of just "Connected".
     public static synchronized void completeAuth(String code, String state) throws IOException {
         PendingAuth p = pending.remove(state);
         if (p == null) {
-            throw new IOException("That sign-in link expired or was already used - try connecting again.");
+            throw new IOException("That connection link expired or was already used - try connecting again.");
         }
         Map<String, String> form = new HashMap<>();
         form.put("client_id", clientId);
@@ -161,11 +189,17 @@ public class GDriveAuth {
                 accessToken);
             Object em = info.get("email");
             if (em instanceof String) email = (String) em;
+            Object nm = info.get("name");
+            if (nm instanceof String) name = (String) nm;
+            Object pic = info.get("picture");
+            if (pic instanceof String) picture = (String) pic;
         } catch (IOException e) {
             // Not fatal - the connection itself succeeded, we just won't
-            // have a friendly email to display. Settings falls back to
-            // "Connected" in that case.
+            // have a friendly name/email/picture to display. Settings
+            // falls back to plain "Connected" in that case.
             email = null;
+            name = null;
+            picture = null;
         }
         save();
     }
@@ -237,7 +271,7 @@ public class GDriveAuth {
     static Map<String, Object> getJson(String urlStr, String bearerToken) throws IOException {
         HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
         conn.setRequestMethod("GET");
-        conn.setRequestProperty("Authorization", "Bearer " + bearerToken);
+        if (bearerToken != null) conn.setRequestProperty("Authorization", "Bearer " + bearerToken);
         conn.setRequestProperty("Accept", "application/json");
         conn.setConnectTimeout(15000);
         conn.setReadTimeout(20000);
@@ -315,7 +349,9 @@ public class GDriveAuth {
             sb.append("  \"accessToken\": ").append(jsonStr(accessToken)).append(",\n");
             sb.append("  \"refreshToken\": ").append(jsonStr(refreshToken)).append(",\n");
             sb.append("  \"expiresAtMillis\": ").append(expiresAtMillis).append(",\n");
-            sb.append("  \"email\": ").append(jsonStr(email)).append("\n");
+            sb.append("  \"email\": ").append(jsonStr(email)).append(",\n");
+            sb.append("  \"name\": ").append(jsonStr(name)).append(",\n");
+            sb.append("  \"picture\": ").append(jsonStr(picture)).append("\n");
             sb.append("}\n");
 
             Path tempFile = Files.createTempFile(Config.DATA_DIR.toPath(), "gdrive", ".tmp");
@@ -347,6 +383,8 @@ public class GDriveAuth {
             v = root.get("refreshToken"); refreshToken = (v instanceof String) ? (String) v : null;
             v = root.get("expiresAtMillis"); expiresAtMillis = (v instanceof Double) ? ((Double) v).longValue() : 0;
             v = root.get("email"); email = (v instanceof String) ? (String) v : null;
+            v = root.get("name"); name = (v instanceof String) ? (String) v : null;
+            v = root.get("picture"); picture = (v instanceof String) ? (String) v : null;
         } catch (Exception e) {
             System.err.println("Warning: could not load Google Drive config: " + e.getMessage());
         }
