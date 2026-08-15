@@ -129,11 +129,23 @@ public class Styles {
           "border-radius:8px 8px 0 0;padding:7px 6px 7px 12px;font-size:13px;cursor:grab;white-space:nowrap;color:#555;}" +
         ".tab.active{background:#fff;color:#111;font-weight:600;}" +
         ".tab.dragging{opacity:.4;cursor:grabbing;}" +
+        ".tab.grouped{border-top:2px solid #6366d1;}" +
         ".tab-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px;}" +
         ".tab-close{font-size:15px;line-height:1;color:#888;padding:0 4px;border-radius:4px;}" +
         ".tab-close:hover{color:#c00;background:rgba(0,0,0,.06);}" +
         ".tab-new{padding:7px 12px;font-size:16px;cursor:pointer;color:#555;background:none;border:none;align-self:center;}" +
         ".tab-new:hover{color:#111;}" +
+        // Tab group ("folder") header - deliberately a single fixed accent
+        // for every group (no per-group color picker), consistent with
+        // .tab.grouped's top border above.
+        ".tab-group-header{display:flex;align-items:center;gap:6px;background:#e6e8fb;border:1px solid #c7cbf5;" +
+          "border-bottom:none;border-radius:8px 8px 0 0;padding:7px 10px;font-size:12px;font-weight:600;" +
+          "color:#4147c4;cursor:pointer;white-space:nowrap;user-select:none;}" +
+        ".tab-group-header:hover{background:#dadefa;}" +
+        ".tab-group-toggle{font-size:10px;transition:transform .12s;}" +
+        ".tab-group-header.collapsed .tab-group-toggle{transform:rotate(-90deg);}" +
+        ".tab-group-name{max-width:120px;overflow:hidden;text-overflow:ellipsis;}" +
+        ".tab-group-count{color:#7278d6;font-weight:500;}" +
         ".tabcontent{flex:1;position:relative;background:#fff;}" +
         ".tabcontent iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:none;display:none;background:#fff;}" +
         ".tabcontent iframe.active{display:block;}" +
@@ -180,13 +192,21 @@ public class Styles {
         ".chip{padding:5px 12px;border-radius:14px;background:#eef0f2;color:#555;font-size:12px;cursor:pointer;}" +
         ".chip:hover{background:#e0e3e7;}" +
         ".chip.active{background:#2563eb;color:#fff;}" +
-        // Undo/redo action toast (move & rename)
-        ".action-toast{display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);" +
-          "background:#1f2328;color:#fff;padding:10px 10px 10px 18px;border-radius:8px;align-items:center;" +
-          "gap:14px;font-size:13px;z-index:2500;box-shadow:0 6px 20px rgba(0,0,0,.25);}" +
-        ".action-toast.open{display:flex;}" +
+        // Undo/redo action toast (move, rename, delete) and the shell's
+        // "closed tab" toast - both share this container/toast styling.
+        // The container just stacks its children bottom-up with a gap;
+        // each toast fades in on its own and is removed by JS after 5s (or
+        // on click), so several can be visible together instead of one
+        // slot overwriting itself.
+        ".action-toast-container{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);" +
+          "display:flex;flex-direction:column;align-items:center;gap:8px;z-index:2500;pointer-events:none;}" +
+        ".action-toast{display:flex;align-items:center;pointer-events:auto;" +
+          "background:#1f2328;color:#fff;padding:10px 10px 10px 18px;border-radius:8px;" +
+          "gap:14px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.25);animation:actionToastIn .18s ease-out;}" +
+        "@keyframes actionToastIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}" +
+        ".action-toast-message{white-space:nowrap;}" +
         ".action-toast-btn{background:none;border:none;color:#7db2ff;cursor:pointer;font-size:13px;" +
-          "font-weight:600;padding:0;}" +
+          "font-weight:600;padding:0;white-space:nowrap;}" +
         ".action-toast-btn:hover{text-decoration:underline;}" +
         ".action-toast-close{background:none;border:none;color:#9aa1ab;cursor:pointer;font-size:16px;" +
           "line-height:1;padding:0;}" +

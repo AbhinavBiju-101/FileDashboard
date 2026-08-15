@@ -17,9 +17,23 @@ public class ShellScript {
         "var shellActiveTabId=null;" +
         "var shellTabCounter=0;" +
         "var shellDragTabId=null;" +
+        // ---- Tab groups ("folders") - collapsible clusters of tabs in the
+        // bar. Every group is rendered with the same fixed accent color
+        // (no per-group color picker - deliberately not a "labeling"
+        // feature, just a way to fold related tabs together), and can be
+        // renamed and collapsed/expanded. shellTabEls/shellGroupHeaderEls
+        // hold the live DOM nodes so shellRenderTabBar() can reuse them
+        // (matters because tabs inside a collapsed group are detached from
+        // the tab bar rather than destroyed, so their iframe and any
+        // in-flight state survives collapsing/expanding).
+        "var shellGroups=[];" +
+        "var shellGroupCounter=0;" +
+        "var shellTabEls={};" +
+        "var shellGroupHeaderEls={};" +
+        "function shellEscapeHtml(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;'); }" +
 
         "function shellSaveState(){" +
-          "try{ localStorage.setItem('fileDashboardTabs', JSON.stringify({tabs:shellTabs, active:shellActiveTabId})); }catch(e){}" +
+          "try{ localStorage.setItem('fileDashboardTabs', JSON.stringify({tabs:shellTabs, active:shellActiveTabId, groups:shellGroups})); }catch(e){}" +
         "}" +
 
         "function shellLoadState(){" +
@@ -28,8 +42,12 @@ public class ShellScript {
             "if(!raw) return false;" +
             "var state=JSON.parse(raw);" +
             "if(!state.tabs||!state.tabs.length) return false;" +
-            "state.tabs.forEach(function(t){ shellCreateTabElement(t.id,t.url,t.title); });" +
+            "shellGroups=state.groups||[];" +
+            "shellGroupCounter=shellGroups.reduce(function(m,g){" +
+              "var n=parseInt(g.id.replace('group-',''),10); return isNaN(n)?m:Math.max(m,n);" +
+            "},0);" +
             "shellTabs=state.tabs;" +
+            "shellTabs.forEach(function(t){ shellCreateTab(t.id, t.url, t.title); });" +
             "shellTabCounter=shellTabs.reduce(function(m,t){" +
               "var n=parseInt(t.id.replace('tab-',''),10); return isNaN(n)?m:Math.max(m,n);" +
             "},0);" +
@@ -42,8 +60,8 @@ public class ShellScript {
           "var existing=shellTabs.find(function(t){ return t.url===url; });" +
           "if(existing){ shellSetActiveTab(existing.id); return false; }" +
           "var id='tab-'+(++shellTabCounter);" +
-          "shellTabs.push({id:id, url:url, title:fallbackLabel||'Loading...'});" +
-          "shellCreateTabElement(id, url, fallbackLabel||'Loading...');" +
+          "shellTabs.push({id:id, url:url, title:fallbackLabel||'Loading...', groupId:null});" +
+          "shellCreateTab(id, url, fallbackLabel||'Loading...');" +
           "shellSetActiveTab(id);" +
           "shellSaveState();" +
           "return false;" +
@@ -63,15 +81,19 @@ public class ShellScript {
           "iframe.src=url;" +
           "var tabObj=shellTabs.find(function(t){ return t.id===shellActiveTabId; });" +
           "if(tabObj){ tabObj.url=url; tabObj.title='Loading...'; }" +
-          "var btn=document.getElementById(shellActiveTabId);" +
+          "var btn=shellTabEls[shellActiveTabId];" +
           "if(btn){ var span=btn.querySelector('.tab-title'); if(span) span.textContent='Loading...'; }" +
           "shellSaveState();" +
           "return false;" +
         "}" +
 
-        "function shellCreateTabElement(id, url, title){" +
-          "var tabbar=document.getElementById('tabbar');" +
-          "var newTabBtn=document.getElementById('newTabBtn');" +
+        // Builds (once) the tab button's DOM node and wires up its
+        // listeners against a stable id, storing it in shellTabEls so later
+        // re-renders (e.g. toggling a group open/closed) can move the same
+        // node around instead of recreating it. Actual placement into the
+        // bar - including where group headers land - is shellRenderTabBar's
+        // job, called after every mutation.
+        "function shellBuildTabElement(id, title){" +
           "var btn=document.createElement('div');" +
           "btn.className='tab'; btn.id=id;" +
           "var titleSpan=document.createElement('span');" +
@@ -81,13 +103,14 @@ public class ShellScript {
           "closeSpan.className='tab-close'; closeSpan.innerHTML='&times;';" +
           "closeSpan.onclick=function(e){ e.stopPropagation(); shellCloseTab(id); };" +
           "btn.appendChild(titleSpan); btn.appendChild(closeSpan);" +
-          "tabbar.insertBefore(btn, newTabBtn);" +
 
           // Drag-to-reorder: dragover moves the dragged tab's DOM node live
           // (classic sortable-list trick), so the person sees tabs shuffle
           // as they drag rather than only on drop. shellTabs (the array
           // that actually gets persisted) is re-synced from the resulting
           // DOM order once the drag ends, whatever element it ends over.
+          // Dropping directly onto a group header instead (see
+          // shellBuildGroupHeader) joins that group rather than reordering.
           "btn.draggable=true;" +
           "btn.addEventListener('dragstart', function(e){" +
             "shellDragTabId=id;" +
@@ -105,7 +128,14 @@ public class ShellScript {
             "e.preventDefault();" +
             "showTabContextMenu(e.clientX, e.clientY, id);" +
           "});" +
+          "shellTabEls[id]=btn;" +
+          "return btn;" +
+        "}" +
 
+        // Creates the tab's iframe (unaffected by grouping) and its button,
+        // then re-renders the whole bar so it lands in the right spot -
+        // right after its group's header if it belongs to one.
+        "function shellCreateTab(id, url, title){" +
           "var iframe=document.createElement('iframe');" +
           "iframe.id=id+'-frame'; iframe.src=url;" +
           "iframe.onload=function(){" +
@@ -117,6 +147,8 @@ public class ShellScript {
             "}catch(e){}" +
           "};" +
           "document.getElementById('tabcontent').appendChild(iframe);" +
+          "shellBuildTabElement(id, title);" +
+          "shellRenderTabBar();" +
         "}" +
 
         // Keeps both title AND url in sync with wherever the tab actually
@@ -127,7 +159,7 @@ public class ShellScript {
         "function shellUpdateTab(id, newTitle, newUrl){" +
           "var tabObj=shellTabs.find(function(t){ return t.id===id; });" +
           "if(tabObj){ tabObj.title=newTitle; if(newUrl) tabObj.url=newUrl; }" +
-          "var btn=document.getElementById(id);" +
+          "var btn=shellTabEls[id];" +
           "if(btn){ var span=btn.querySelector('.tab-title'); if(span) span.textContent=newTitle; }" +
           "shellSaveState();" +
         "}" +
@@ -135,8 +167,8 @@ public class ShellScript {
         "function shellTabDragOver(e, overId){" +
           "e.preventDefault();" +
           "if(!shellDragTabId || shellDragTabId===overId) return;" +
-          "var dragging=document.getElementById(shellDragTabId);" +
-          "var over=document.getElementById(overId);" +
+          "var dragging=shellTabEls[shellDragTabId];" +
+          "var over=shellTabEls[overId];" +
           "if(!dragging||!over) return;" +
           "var rect=over.getBoundingClientRect();" +
           "var before=(e.clientX-rect.left)<rect.width/2;" +
@@ -146,16 +178,172 @@ public class ShellScript {
 
         // Reorders shellTabs (the array that gets persisted to
         // localStorage) to match whatever order the tab elements ended up
-        // in after dragging, so a reload restores tabs in the new order.
+        // in after dragging, then pulls each group's tabs back together
+        // (shellNormalizeGroups) since a drag can otherwise drop an
+        // unrelated tab in the middle of a group's run, and finally
+        // re-renders so the bar reflects the normalized order - group
+        // headers included - rather than the raw drop position.
         "function shellSyncTabOrderFromDom(){" +
           "var order=Array.prototype.map.call(document.querySelectorAll('#tabbar .tab'), function(el){ return el.id; });" +
           "shellTabs.sort(function(a,b){ return order.indexOf(a.id)-order.indexOf(b.id); });" +
+          "shellNormalizeGroups();" +
           "shellSaveState();" +
+          "shellRenderTabBar();" +
         "}" +
 
+        // ---- Group ("folder") management ----
+        // Every group's header uses the same fixed .tab-group-header
+        // styling - intentionally no per-group color, just name + collapse
+        // state - so "folders" stay visually consistent no matter how many
+        // exist.
+        "function shellNormalizeGroups(){" +
+          "var firstIndex={};" +
+          "shellTabs.forEach(function(t,i){ if(t.groupId && !(t.groupId in firstIndex)) firstIndex[t.groupId]=i; });" +
+          "var withIdx=shellTabs.map(function(t,i){ return {t:t, i:i}; });" +
+          "withIdx.sort(function(a,b){" +
+            "var ga=a.t.groupId ? firstIndex[a.t.groupId] : a.i;" +
+            "var gb=b.t.groupId ? firstIndex[b.t.groupId] : b.i;" +
+            "if(ga!==gb) return ga-gb;" +
+            "return a.i-b.i;" +
+          "});" +
+          "shellTabs=withIdx.map(function(x){ return x.t; });" +
+        "}" +
+        "function shellCleanupEmptyGroup(groupId){" +
+          "var stillUsed=shellTabs.some(function(t){ return t.groupId===groupId; });" +
+          "if(!stillUsed){" +
+            "shellGroups=shellGroups.filter(function(g){ return g.id!==groupId; });" +
+            "delete shellGroupHeaderEls[groupId];" +
+          "}" +
+        "}" +
+        "function shellCreateGroupWithTab(tabId){" +
+          "var name=prompt('Group name:', 'New Group');" +
+          "if(!name) return;" +
+          "var gid='group-'+(++shellGroupCounter);" +
+          "shellGroups.push({id:gid, name:name, collapsed:false});" +
+          "shellAssignTabToGroup(tabId, gid);" +
+        "}" +
+        "function shellAssignTabToGroup(tabId, groupId){" +
+          "var tabObj=shellTabs.find(function(t){ return t.id===tabId; });" +
+          "if(!tabObj) return;" +
+          "var oldGroup=tabObj.groupId;" +
+          "if(oldGroup===groupId) return;" +
+          "tabObj.groupId=groupId;" +
+          "shellNormalizeGroups();" +
+          "if(oldGroup) shellCleanupEmptyGroup(oldGroup);" +
+          "shellSaveState();" +
+          "shellRenderTabBar();" +
+        "}" +
+        "function shellRemoveTabFromGroup(tabId){" +
+          "var tabObj=shellTabs.find(function(t){ return t.id===tabId; });" +
+          "if(!tabObj || !tabObj.groupId) return;" +
+          "var oldGroup=tabObj.groupId;" +
+          "tabObj.groupId=null;" +
+          "shellCleanupEmptyGroup(oldGroup);" +
+          "shellSaveState();" +
+          "shellRenderTabBar();" +
+        "}" +
+        "function shellUngroupAll(groupId){" +
+          "shellTabs.forEach(function(t){ if(t.groupId===groupId) t.groupId=null; });" +
+          "shellGroups=shellGroups.filter(function(g){ return g.id!==groupId; });" +
+          "delete shellGroupHeaderEls[groupId];" +
+          "shellSaveState();" +
+          "shellRenderTabBar();" +
+        "}" +
+        "function shellRenameGroup(groupId){" +
+          "var g=shellGroups.find(function(gr){ return gr.id===groupId; });" +
+          "if(!g) return;" +
+          "var name=prompt('Rename group:', g.name);" +
+          "if(!name) return;" +
+          "g.name=name;" +
+          "shellSaveState();" +
+          "shellRenderTabBar();" +
+        "}" +
+        // Collapsing a group that contains the active tab switches to
+        // another visible tab first, same as it would look odd for the
+        // highlighted tab to vanish into a collapsed group with nothing in
+        // the bar showing as active. If every open tab is in this one
+        // group there's nowhere else to go, so it just collapses in place.
+        "function toggleGroupCollapse(groupId){" +
+          "var g=shellGroups.find(function(gr){ return gr.id===groupId; });" +
+          "if(!g) return;" +
+          "g.collapsed=!g.collapsed;" +
+          "if(g.collapsed){" +
+            "var activeTabObj=shellTabs.find(function(t){ return t.id===shellActiveTabId; });" +
+            "if(activeTabObj && activeTabObj.groupId===groupId){" +
+              "var fallback=shellTabs.find(function(t){ return t.groupId!==groupId; });" +
+              "if(fallback){ shellSetActiveTab(fallback.id); }" +
+            "}" +
+          "}" +
+          "shellSaveState();" +
+          "shellRenderTabBar();" +
+        "}" +
+        "function shellBuildGroupHeader(groupId){" +
+          "var header=document.createElement('div');" +
+          "header.className='tab-group-header';" +
+          "header.dataset.groupId=groupId;" +
+          "var toggle=document.createElement('span');" +
+          "toggle.className='tab-group-toggle'; toggle.textContent='\\u25BE';" +
+          "var nameSpan=document.createElement('span');" +
+          "nameSpan.className='tab-group-name';" +
+          "var countSpan=document.createElement('span');" +
+          "countSpan.className='tab-group-count';" +
+          "header.appendChild(toggle); header.appendChild(nameSpan); header.appendChild(countSpan);" +
+          "header.addEventListener('click', function(){ toggleGroupCollapse(groupId); });" +
+          "header.addEventListener('dblclick', function(e){ e.stopPropagation(); shellRenameGroup(groupId); });" +
+          "header.addEventListener('contextmenu', function(e){ e.preventDefault(); e.stopPropagation(); showGroupContextMenu(e.clientX, e.clientY, groupId); });" +
+          "header.addEventListener('dragover', function(e){ if(shellDragTabId) e.preventDefault(); });" +
+          "header.addEventListener('drop', function(e){" +
+            "e.preventDefault();" +
+            "if(shellDragTabId) shellAssignTabToGroup(shellDragTabId, groupId);" +
+          "});" +
+          "shellGroupHeaderEls[groupId]=header;" +
+          "return header;" +
+        "}" +
+        // Full rebuild of the tab bar's chip order from shellTabs/shellGroups
+        // - the single source of truth - rather than hand-patching the DOM,
+        // so group headers, collapse state, and member tabs can never drift
+        // out of sync with each other. Tab and header DOM nodes themselves
+        // are reused (see shellTabEls/shellGroupHeaderEls), only their
+        // position and visibility change.
+        "function shellRenderTabBar(){" +
+          "var tabbar=document.getElementById('tabbar');" +
+          "var newTabBtn=document.getElementById('newTabBtn');" +
+          "if(!tabbar||!newTabBtn) return;" +
+          "Array.prototype.slice.call(tabbar.querySelectorAll('.tab, .tab-group-header')).forEach(function(el){ el.remove(); });" +
+          "var renderedGroup=null;" +
+          "shellTabs.forEach(function(t){" +
+            "if(t.groupId){" +
+              "var g=shellGroups.find(function(gr){ return gr.id===t.groupId; });" +
+              "if(g && renderedGroup!==g.id){" +
+                "var header=shellGroupHeaderEls[g.id]||shellBuildGroupHeader(g.id);" +
+                "var count=shellTabs.filter(function(tt){ return tt.groupId===g.id; }).length;" +
+                "header.querySelector('.tab-group-name').textContent=g.name;" +
+                "header.querySelector('.tab-group-count').textContent=g.collapsed?('('+count+')'):'';" +
+                "header.classList.toggle('collapsed', !!g.collapsed);" +
+                "tabbar.insertBefore(header, newTabBtn);" +
+                "renderedGroup=g.id;" +
+              "}" +
+            "}" +
+            "var el=shellTabEls[t.id];" +
+            "if(!el) return;" +
+            "var g2=t.groupId?shellGroups.find(function(gr){ return gr.id===t.groupId; }):null;" +
+            "el.classList.toggle('grouped', !!t.groupId);" +
+            "if(!(g2 && g2.collapsed)){ tabbar.insertBefore(el, newTabBtn); }" +
+          "});" +
+        "}" +
+
+        // Looks tabs up in shellTabEls rather than document.getElementById
+        // because a tab sitting inside a collapsed group is deliberately
+        // detached from the bar (not just hidden), so the plain DOM lookup
+        // would miss it.
         "function shellSetActiveTab(id){" +
           "shellActiveTabId=id;" +
-          "document.querySelectorAll('.tab').forEach(function(t){ t.classList.toggle('active', t.id===id); });" +
+          "var tabObj=shellTabs.find(function(t){ return t.id===id; });" +
+          "if(tabObj && tabObj.groupId){" +
+            "var g=shellGroups.find(function(gr){ return gr.id===tabObj.groupId; });" +
+            "if(g && g.collapsed){ g.collapsed=false; shellRenderTabBar(); }" +
+          "}" +
+          "Object.keys(shellTabEls).forEach(function(tid){ shellTabEls[tid].classList.toggle('active', tid===id); });" +
           "document.querySelectorAll('.tabcontent iframe').forEach(function(f){ f.classList.toggle('active', f.id===id+'-frame'); });" +
           "shellSaveState();" +
         "}" +
@@ -164,23 +352,29 @@ public class ShellScript {
           "var idx=shellTabs.findIndex(function(t){ return t.id===id; });" +
           "if(idx===-1) return;" +
           "var closedTab=shellTabs[idx];" +
-          // Remember enough to fully restore it: url, title, and its
-          // original position (so "undo" puts it back where it was, not
-          // just tacked onto the end). Capped like the undo/redo stack in
-          // PageScripts.js, same reasoning - unbounded history for
-          // something this cheap to re-derive isn't worth keeping around.
-          "shellClosedTabsStack.push({url:closedTab.url, title:closedTab.title, index:idx});" +
-          "if(shellClosedTabsStack.length>SHELL_MAX_CLOSED_TABS) shellClosedTabsStack.shift();" +
+          // Remember enough to fully restore it: url, title, group
+          // membership, and its original position (so "undo" puts it back
+          // where it was, not just tacked onto the end). Capped like the
+          // undo/redo stack in PageScripts.js, same reasoning - unbounded
+          // history for something this cheap to re-derive isn't worth
+          // keeping around.
+          "var closeId=++shellCloseIdCounter;" +
+          "var record={url:closedTab.url, title:closedTab.title, index:idx, groupId:closedTab.groupId||null, closeId:closeId};" +
+          "shellClosedTabsStack.push(record);" +
+          "if(shellClosedTabsStack.length>SHELL_MAX_CLOSED_TABS){ var dropped=shellClosedTabsStack.shift(); shellRemoveReopenToast(dropped.closeId); }" +
           "shellTabs.splice(idx,1);" +
-          "var btn=document.getElementById(id); if(btn) btn.remove();" +
+          "var btn=shellTabEls[id]; if(btn) btn.remove();" +
+          "delete shellTabEls[id];" +
           "var frame=document.getElementById(id+'-frame'); if(frame) frame.remove();" +
-          "shellShowReopenToast(closedTab.title);" +
+          "if(closedTab.groupId) shellCleanupEmptyGroup(closedTab.groupId);" +
+          "shellShowReopenToast(record);" +
 
-          "if(shellTabs.length===0){ openTab('/dashboard','Dashboard'); return; }" +
+          "if(shellTabs.length===0){ shellRenderTabBar(); openTab('/dashboard','Dashboard'); return; }" +
           "if(shellActiveTabId===id){" +
             "var next=shellTabs[Math.max(0, idx-1)];" +
             "shellSetActiveTab(next.id);" +
           "}" +
+          "shellRenderTabBar();" +
           "shellSaveState();" +
         "}" +
 
@@ -189,63 +383,107 @@ public class ShellScript {
         // doesn't load PageScripts.js - see the tab-context-menu comment
         // below for why - so it gets its own small copy), plus the
         // standard browser shortcut Ctrl/Cmd+Shift+T. Reopening restores
-        // the tab to its original position in the bar, not just at the
-        // end, and repeated Ctrl+Shift+T walks back through however many
-        // tabs were closed, most-recent-first - same LIFO behavior as a
-        // real browser's "reopen closed tab". ----
+        // the tab to its original position (and group) in the bar, not
+        // just at the end, and repeated Ctrl+Shift+T walks back through
+        // however many tabs were closed, most-recent-first - same LIFO
+        // behavior as a real browser's "reopen closed tab". Toasts stack
+        // (one per closed tab, each independently dismissible/timed) rather
+        // than a single slot overwriting itself, so closing several tabs in
+        // a row doesn't silently swallow the earlier ones - each toast's
+        // Reopen button is bound to that specific closed tab, not just
+        // "whatever's most recent", so clicking an older toast still
+        // reopens the right one even if a newer toast is still showing. ----
         "var shellClosedTabsStack=[];" +
         "var SHELL_MAX_CLOSED_TABS=10;" +
-        "var shellReopenToastTimer=null;" +
-        "function shellShowReopenToast(title){" +
-          "var toast=document.getElementById('shellReopenToast');" +
-          "if(!toast) return;" +
-          "document.getElementById('shellReopenToastMsg').textContent='Closed \"'+title+'\"';" +
-          "toast.classList.add('open');" +
-          "clearTimeout(shellReopenToastTimer);" +
-          "shellReopenToastTimer=setTimeout(hideReopenToast, 6000);" +
+        "var shellCloseIdCounter=0;" +
+        "var shellToastEls={};" +
+        "function shellShowReopenToast(record){" +
+          "var container=document.getElementById('shellToastContainer');" +
+          "if(!container) return;" +
+          "var toast=document.createElement('div');" +
+          "toast.className='action-toast open';" +
+          "var msg=document.createElement('span');" +
+          "msg.className='action-toast-message';" +
+          "msg.textContent='Closed \"'+record.title+'\"';" +
+          "var btn=document.createElement('button');" +
+          "btn.className='action-toast-btn'; btn.textContent='Reopen';" +
+          "var closeBtn=document.createElement('button');" +
+          "closeBtn.className='action-toast-close'; closeBtn.innerHTML='&times;'; closeBtn.setAttribute('aria-label','Dismiss');" +
+          "toast.appendChild(msg); toast.appendChild(btn); toast.appendChild(closeBtn);" +
+          "container.appendChild(toast);" +
+          "shellToastEls[record.closeId]=toast;" +
+          "btn.onclick=function(){ shellReopenSpecific(record.closeId); };" +
+          "closeBtn.onclick=function(){ shellRemoveReopenToast(record.closeId); };" +
+          "setTimeout(function(){ shellRemoveReopenToast(record.closeId); }, 5000);" +
         "}" +
-        "function hideReopenToast(){" +
-          "var toast=document.getElementById('shellReopenToast');" +
-          "if(toast) toast.classList.remove('open');" +
-          "clearTimeout(shellReopenToastTimer);" +
+        "function shellRemoveReopenToast(closeId){" +
+          "var t=shellToastEls[closeId];" +
+          "if(t && t.parentNode) t.parentNode.removeChild(t);" +
+          "delete shellToastEls[closeId];" +
         "}" +
-        // Moves each tab button to match shellTabs' current order -
-        // insertBefore on an already-attached node relocates it rather
-        // than duplicating it, so this is just "lay them out in array
-        // order" reused from the drag-reorder path (shellSyncTabOrderFromDom
-        // does the reverse: DOM order -> array; this goes array -> DOM).
-        "function shellReorderDomFromTabs(){" +
-          "var tabbar=document.getElementById('tabbar');" +
-          "var newTabBtn=document.getElementById('newTabBtn');" +
-          "shellTabs.forEach(function(t){" +
-            "var el=document.getElementById(t.id);" +
-            "if(el) tabbar.insertBefore(el, newTabBtn);" +
-          "});" +
+        "function shellDoReopen(record){" +
+          "var id='tab-'+(++shellTabCounter);" +
+          "var groupId=record.groupId;" +
+          "if(groupId && !shellGroups.some(function(g){ return g.id===groupId; })) groupId=null;" +
+          "var insertAt=Math.min(record.index, shellTabs.length);" +
+          "shellTabs.splice(insertAt, 0, {id:id, url:record.url, title:record.title, groupId:groupId});" +
+          "if(groupId) shellNormalizeGroups();" +
+          "shellCreateTab(id, record.url, record.title);" +
+          "shellSetActiveTab(id);" +
+          "shellSaveState();" +
         "}" +
         "function shellReopenClosedTab(){" +
           "if(!shellClosedTabsStack.length) return;" +
           "var closed=shellClosedTabsStack.pop();" +
-          "var id='tab-'+(++shellTabCounter);" +
-          "var insertAt=Math.min(closed.index, shellTabs.length);" +
-          "shellTabs.splice(insertAt, 0, {id:id, url:closed.url, title:closed.title});" +
-          "shellCreateTabElement(id, closed.url, closed.title);" +
-          "shellReorderDomFromTabs();" +
-          "shellSetActiveTab(id);" +
-          "shellSaveState();" +
+          "shellDoReopen(closed);" +
+          "shellRemoveReopenToast(closed.closeId);" +
+        "}" +
+        "function shellReopenSpecific(closeId){" +
+          "var idx=shellClosedTabsStack.findIndex(function(r){ return r.closeId===closeId; });" +
+          "if(idx===-1) return;" +
+          "var closed=shellClosedTabsStack[idx];" +
+          "shellClosedTabsStack.splice(idx,1);" +
+          "shellDoReopen(closed);" +
+          "shellRemoveReopenToast(closeId);" +
         "}" +
 
-        // ---- Tab context menu (right-click a tab) - just "Duplicate" for
-        // now, reusing the same .context-menu/.context-menu-item styling
-        // PageScripts.js uses for file/folder cards, since this shell page
-        // (unlike the tabs' own iframe content) doesn't load PageScripts.js
-        // itself and needs its own small copy of the show/hide/position
-        // logic. ----
+        // ---- Tab context menu (right-click a tab, or a group header) -
+        // "Duplicate" plus group actions, reusing the same
+        // .context-menu/.context-menu-item styling PageScripts.js uses for
+        // file/folder cards, since this shell page (unlike the tabs' own
+        // iframe content) doesn't load PageScripts.js itself and needs its
+        // own small copy of the show/hide/position logic. ----
         "function shellMenuItem(label, action){ return '<div class=\"context-menu-item\" data-menu-action=\"'+action+'\">'+label+'</div>'; }" +
         "function showTabContextMenu(x, y, tabId){" +
           "var menu=document.getElementById('tabContextMenu');" +
           "if(!menu) return;" +
-          "menu.innerHTML=shellMenuItem('Duplicate','duplicate-tab');" +
+          "var tabObj=shellTabs.find(function(t){ return t.id===tabId; });" +
+          "var html=shellMenuItem('Duplicate','duplicate-tab');" +
+          "html+='<div class=\"context-menu-divider\"></div>';" +
+          "if(tabObj && tabObj.groupId){" +
+            "html+=shellMenuItem('Rename group','rename-group');" +
+            "html+=shellMenuItem('Remove from group','remove-from-group');" +
+            "html+=shellMenuItem('Ungroup','ungroup-all');" +
+          "}else{" +
+            "html+=shellMenuItem('New group','new-group');" +
+            "shellGroups.forEach(function(g){" +
+              "html+=shellMenuItem('Add to \"'+shellEscapeHtml(g.name)+'\"', 'add-to-group:'+g.id);" +
+            "});" +
+          "}" +
+          "menu.innerHTML=html;" +
           "menu.dataset.tabId=tabId;" +
+          "menu.dataset.groupId='';" +
+          "menu.classList.add('open');" +
+          "var maxX=window.innerWidth-menu.offsetWidth-8, maxY=window.innerHeight-menu.offsetHeight-8;" +
+          "menu.style.left=Math.min(x,maxX)+'px';" +
+          "menu.style.top=Math.min(y,maxY)+'px';" +
+        "}" +
+        "function showGroupContextMenu(x, y, groupId){" +
+          "var menu=document.getElementById('tabContextMenu');" +
+          "if(!menu) return;" +
+          "menu.innerHTML=shellMenuItem('Rename group','header-rename-group')+shellMenuItem('Ungroup','header-ungroup-all');" +
+          "menu.dataset.tabId='';" +
+          "menu.dataset.groupId=groupId;" +
           "menu.classList.add('open');" +
           "var maxX=window.innerWidth-menu.offsetWidth-8, maxY=window.innerHeight-menu.offsetHeight-8;" +
           "menu.style.left=Math.min(x,maxX)+'px';" +
@@ -255,17 +493,19 @@ public class ShellScript {
           "var menu=document.getElementById('tabContextMenu');" +
           "if(menu) menu.classList.remove('open');" +
         "}" +
-        // Opens a brand-new tab pointed at the same URL - the shared
-        // "already-open URL just gets focused" shortcut inside openTab()
-        // is deliberately bypassed here (a straight openTab() call would
-        // just refocus the original instead of duplicating it), since
-        // duplicating is the whole point of this menu item.
+        // Opens a brand-new tab pointed at the same URL (and joins the same
+        // group, if any) - the shared "already-open URL just gets focused"
+        // shortcut inside openTab() is deliberately bypassed here (a
+        // straight openTab() call would just refocus the original instead
+        // of duplicating it), since duplicating is the whole point of this
+        // menu item.
         "function duplicateTab(tabId){" +
           "var tabObj=shellTabs.find(function(t){ return t.id===tabId; });" +
           "if(!tabObj) return;" +
           "var id='tab-'+(++shellTabCounter);" +
-          "shellTabs.push({id:id, url:tabObj.url, title:tabObj.title});" +
-          "shellCreateTabElement(id, tabObj.url, tabObj.title);" +
+          "shellTabs.push({id:id, url:tabObj.url, title:tabObj.title, groupId:tabObj.groupId||null});" +
+          "if(tabObj.groupId) shellNormalizeGroups();" +
+          "shellCreateTab(id, tabObj.url, tabObj.title);" +
           "shellSetActiveTab(id);" +
           "shellSaveState();" +
         "}" +
@@ -273,7 +513,17 @@ public class ShellScript {
           "var item=e.target.closest('#tabContextMenu .context-menu-item');" +
           "if(item){" +
             "var menu=document.getElementById('tabContextMenu');" +
-            "if(item.dataset.menuAction==='duplicate-tab'){ duplicateTab(menu.dataset.tabId); }" +
+            "var action=item.dataset.menuAction;" +
+            "var tabId=menu.dataset.tabId;" +
+            "var groupId=menu.dataset.groupId;" +
+            "if(action==='duplicate-tab'){ duplicateTab(tabId); }" +
+            "else if(action==='new-group'){ shellCreateGroupWithTab(tabId); }" +
+            "else if(action==='rename-group'){ var t1=shellTabs.find(function(x){return x.id===tabId;}); if(t1&&t1.groupId) shellRenameGroup(t1.groupId); }" +
+            "else if(action==='remove-from-group'){ shellRemoveTabFromGroup(tabId); }" +
+            "else if(action==='ungroup-all'){ var t2=shellTabs.find(function(x){return x.id===tabId;}); if(t2&&t2.groupId) shellUngroupAll(t2.groupId); }" +
+            "else if(action==='header-rename-group'){ shellRenameGroup(groupId); }" +
+            "else if(action==='header-ungroup-all'){ shellUngroupAll(groupId); }" +
+            "else if(action.indexOf('add-to-group:')===0){ shellAssignTabToGroup(tabId, action.substring('add-to-group:'.length)); }" +
             "hideTabContextMenu();" +
             "return;" +
           "}" +
@@ -371,7 +621,6 @@ public class ShellScript {
           "if((e.ctrlKey||e.metaKey) && e.shiftKey && (e.key==='T'||e.key==='t')){" +
             "e.preventDefault();" +
             "shellReopenClosedTab();" +
-            "hideReopenToast();" +
           "}" +
           "if(e.key==='/' && document.activeElement.tagName!=='INPUT' && document.activeElement.tagName!=='TEXTAREA'){" +
             "e.preventDefault();" +

@@ -76,7 +76,7 @@ public class FileOpsHandler implements HttpHandler {
                     result = new OpResult(handleDuplicate(target), null);
                     break;
                 case "delete":
-                    result = new OpResult(handleDelete(target, relPath), null);
+                    result = handleDelete(target, relPath);
                     break;
                 case "move":
                     result = handleMove(target, relPath, destPath);
@@ -85,7 +85,7 @@ public class FileOpsHandler implements HttpHandler {
                     respondJson(exchange, false, "Unknown action.");
                     return;
             }
-            respondJson(exchange, true, result.message, result.newPath);
+            respondJson(exchange, true, result.message, result.newPath, result.trashId);
         } catch (IOException e) {
             respondJson(exchange, false, e.getMessage());
         }
@@ -94,13 +94,21 @@ public class FileOpsHandler implements HttpHandler {
     // newPath is only meaningful for rename/move - it's how the client
     // builds an "Undo" toast without having to duplicate this handler's
     // path-joining logic: it just remembers where the item ended up, and
-    // can reverse the same rename/move call to put it back.
+    // can reverse the same rename/move call to put it back. trashId is the
+    // delete-only equivalent: the id TrashManager assigned the item, which
+    // the client needs to undo a delete via POST /trashops (action=restore)
+    // rather than /fileops.
     private static class OpResult {
         final String message;
         final String newPath;
+        final String trashId;
         OpResult(String message, String newPath) {
+            this(message, newPath, null);
+        }
+        OpResult(String message, String newPath, String trashId) {
             this.message = message;
             this.newPath = newPath;
+            this.trashId = trashId;
         }
     }
 
@@ -150,11 +158,11 @@ public class FileOpsHandler implements HttpHandler {
         return "Created " + copyName;
     }
 
-    private String handleDelete(File target, String relPath) throws IOException {
+    private OpResult handleDelete(File target, String relPath) throws IOException {
         String name = target.getName();
-        TrashManager.moveToTrash(target, relPath);
+        TrashManager.Entry entry = TrashManager.moveToTrash(target, relPath);
         RecentActivity.forgetPath(relPath);
-        return "Moved \"" + name + "\" to the recycle bin";
+        return new OpResult("Moved \"" + name + "\" to the recycle bin", null, entry.id);
     }
 
     private OpResult handleMove(File target, String relPath, String destRelPath) throws IOException {
@@ -248,14 +256,21 @@ public class FileOpsHandler implements HttpHandler {
     }
 
     private void respondJson(HttpExchange exchange, boolean success, String message) throws IOException {
-        respondJson(exchange, success, message, null);
+        respondJson(exchange, success, message, null, null);
     }
 
     private void respondJson(HttpExchange exchange, boolean success, String message, String newPath) throws IOException {
+        respondJson(exchange, success, message, newPath, null);
+    }
+
+    private void respondJson(HttpExchange exchange, boolean success, String message, String newPath, String trashId) throws IOException {
         StringBuilder json = new StringBuilder("{\"success\": ").append(success)
             .append(", \"message\": \"").append(MiniJson.escape(message == null ? "" : message)).append("\"");
         if (newPath != null) {
             json.append(", \"newPath\": \"").append(MiniJson.escape(newPath)).append("\"");
+        }
+        if (trashId != null) {
+            json.append(", \"trashId\": \"").append(MiniJson.escape(trashId)).append("\"");
         }
         json.append("}");
         byte[] bytes = json.toString().getBytes(StandardCharsets.UTF_8);

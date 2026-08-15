@@ -1,12 +1,112 @@
 # TODO — continue here
 
 ## Just added, NOT tested at all — verify these first
-Unlike previous sessions, this one had no working `javac`/JDK and no network
-access in the sandbox, so nothing below was compiled or run — only carefully
-reviewed by hand (brace/paren/quote balance, tracing call sites). Please
-build it for real before trusting it. `build/` and `FileDashboard.jar` were
-deleted since they're now stale (built from old source) — rebuild via
+This session had no working `javac`/JDK in the sandbox either, so nothing
+below was compiled or run as a real server. Node.js *was* available this
+time, so every embedded-JS string (`ShellScript.java`'s `SCRIPT` and
+`PageScripts.java`'s `SCRIPT`) was mechanically extracted and passed through
+`node --check` to at least confirm they're syntactically valid JS - that
+catches typos/unbalanced brackets/etc. but says nothing about runtime
+correctness (DOM ids that don't exist, wrong argument order, and so on).
+Please build it for real and click through these before trusting them.
+`build/` and `FileDashboard.jar` are stale if present - rebuild via
 `build-jar.bat` or BlueJ.
+
+7. **Collapsible tab groups ("folders")** — `ShellScript.java`: tabs can now
+   be clustered into named, collapsible groups in the tab bar. Right-click a
+   tab for "New group" / "Add to '<existing group>'" / "Rename group" /
+   "Remove from group" / "Ungroup"; right-click a group's header for
+   "Rename group" / "Ungroup" directly. Double-click a header to rename.
+   Click a header to collapse/expand. Drag a tab onto a header to join that
+   group; dragging tabs around otherwise still reorders as before, with
+   `shellNormalizeGroups()` pulling each group's members back into a
+   contiguous run afterward so a group can't end up visually split apart.
+   Every group uses the same fixed accent color (`.tab-group-header` /
+   `.tab.grouped` in `Styles.java`) - deliberately not a per-group color
+   picker, per what was asked for. Persisted in `localStorage` alongside
+   `shellTabs` (see `shellSaveState`/`shellLoadState`). The tab-render path
+   was rewritten around this: `shellCreateTabElement` (old, direct DOM
+   insertion) became `shellBuildTabElement` (builds the node) +
+   `shellCreateTab` (creates the iframe, then calls `shellRenderTabBar()`,
+   which now rebuilds the whole bar's chip order from `shellTabs`/
+   `shellGroups` every time rather than patching the DOM by hand). Verify:
+   create a group with 2-3 tabs, collapse/expand it (including while the
+   active tab is inside it - should hop to another tab on collapse), rename
+   it, reload the page and confirm it's still there, drag a fourth tab onto
+   the header to add it, close a grouped tab and reopen it via the toast
+   (should land back in the group), and confirm closing every tab in a
+   group deletes the (now-empty) group automatically.
+
+8. **"Refresh" on right-click empty grid space** — `PageScripts.java`:
+   `showFolderContextMenu()` now has a "Refresh" item above "New folder
+   here", wired to a new `refreshCurrentFolder()` that `fetch()`es the
+   current tab's own URL, parses it with `DOMParser`, and swaps in just the
+   refreshed `.grid[data-current-path]` element - deliberately *not*
+   `location.reload()`, since that reloads the top-level shell page and
+   tears down every other open tab's iframe (and whatever preview state
+   they had) along with it. Verify: open two Browse tabs on different
+   folders, add a file to one folder from outside the app, right-click empty
+   space in that tab and choose Refresh - the new file should appear and
+   the *other* tab should be completely undisturbed (scroll position, any
+   open preview, etc. all intact).
+
+9. **Toast stacking, 5s auto-fade, and undo for delete** —
+   `PageScripts.java` + `ShellScript.java` + `Styles.java`. Two separate
+   toast systems (file-ops undo/redo in `PageScripts.java`, "closed tab" in
+   `ShellScript.java`) both moved from a single fixed-position `<div>` that
+   the next toast would silently overwrite, to a `.action-toast-container`
+   that toasts get appended into and independently `setTimeout`-removed
+   from (5000ms now, was 7000/6000ms; timer pauses on hover for the
+   file-ops one). Delete now participates in undo/redo for the first time -
+   previously excluded on purpose ("Trash is already a safety net"), but
+   that reasoning left `deleteItem`/`deleteSelection` toast-less, which
+   wasn't the intent. `TrashManager.moveToTrash`'s return value (already had
+   an `Entry.id`) is now threaded back through `FileOpsHandler`'s new
+   `OpResult(message, newPath, trashId)` 3-arg constructor and a new
+   `respondJson(..., trashId)` overload, so the client gets the trash id
+   back and can undo a delete via `POST /trashops action=restore` (new
+   `runOp()` branch for `op.action==='trash-restore'`) instead of the usual
+   `/fileops`. Redoing a delete assigns a *new* trash id, so `clickRedo()`
+   rewrites `entry.undoOp` with the fresh id(s) before pushing the entry
+   back onto the undo stack - otherwise a second Undo after a Redo would
+   try to restore an id that's already been restored once. Verify: delete a
+   single file and a multi-select of files, confirm both show an Undo toast
+   that actually restores them; delete two different files in quick
+   succession and confirm both toasts are visible stacked rather than the
+   second replacing the first; let a toast sit untouched and confirm it
+   fades around 5s; Undo then Redo then Undo again on a deleted file and
+   confirm it doesn't error out the second time.
+
+## Known gaps / things to watch for
+- `CODE_LANG_MAP` in `PageScripts.java` (JS) and `CodeLanguageUtil.java`
+  (server) are two separate hand-kept-in-sync lists — if you add a language
+  to one, add it to the other too.
+- Address bar / Move-to modal both hit `/subfolders` a lot; fine for normal
+  folders but untested against a folder with thousands of entries.
+- `/trash-browse` and `/trash-file` are read-only by design (no
+  rename/move/upload while inside the trash) — that's intentional, not an
+  oversight, but worth confirming it's still what's wanted once you've used
+  it for real.
+- The `/events` per-folder SSE connection-limit issue (see old item 5 below)
+  is still latent for Browse tabs themselves if someone routinely keeps
+  many open.
+- Tab groups (item 7) don't support dragging a whole collapsed group as a
+  block to reorder it relative to other tabs/groups - only individual tabs
+  drag. Reordering a collapsed group means expanding it first.
+- A closed tab's "Reopen" toast (item 9) remembers which group it was in by
+  id; if that group was fully closed/ungrouped in the meantime the tab just
+  reopens ungrouped rather than recreating the group - seemed like the
+  saner default but worth a second opinion.
+
+## Testing method used previous sessions (not available this one)
+Built + ran the real server in the sandbox, hit endpoints with curl, and for
+JS logic used jsdom (Node) loading the actual rendered HTML/JS and firing
+real DOM events. That caught several real bugs in earlier sessions and
+would be worth doing again on this batch before considering it done - this
+session could only do static review plus `node --check` syntax validation
+(see top of file).
+
+## Previously added (kept for history)
 
 1. **Favicon** — `Styles.FAVICON` (inline SVG data URI, blue folder glyph),
    prepended to `Styles.CSS` so every page picks it up automatically. Just
@@ -62,23 +162,3 @@ deleted since they're now stale (built from old source) — rebuild via
 6. **Address bar hierarchical dropdown** — turned out to already be fully
    built (`ShellScript.java` + `SubfoldersHandler.java`), and TODO.md said it
    was tested last session. Nothing changed here.
-
-## Known gaps / things to watch for
-- `CODE_LANG_MAP` in `PageScripts.java` (JS) and `CodeLanguageUtil.java`
-  (server) are two separate hand-kept-in-sync lists — if you add a language
-  to one, add it to the other too.
-- Address bar / Move-to modal both hit `/subfolders` a lot; fine for normal
-  folders but untested against a folder with thousands of entries.
-- `/trash-browse` and `/trash-file` are read-only by design (no
-  rename/move/upload while inside the trash) — that's intentional, not an
-  oversight, but worth confirming it's still what's wanted once you've used
-  it for real.
-- The `/events` per-folder SSE connection-limit issue (see item 5) is still
-  latent for Browse tabs themselves if someone routinely keeps many open.
-
-## Testing method used previous sessions (not available this one)
-Built + ran the real server in the sandbox, hit endpoints with curl, and for
-JS logic used jsdom (Node) loading the actual rendered HTML/JS and firing
-real DOM events. That caught several real bugs in earlier sessions and
-would be worth doing again on this batch before considering it done —
-this session could only do static review.

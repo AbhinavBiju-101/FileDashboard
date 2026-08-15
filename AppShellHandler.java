@@ -47,11 +47,7 @@ public class AppShellHandler implements HttpHandler {
         sb.append("</div>");
         sb.append("<div id='addressBarSuggestions' class='address-suggestions'></div>");
         sb.append("</div></div>");
-        sb.append("<div id='shellReopenToast' class='action-toast'>");
-        sb.append("<span id='shellReopenToastMsg'></span>");
-        sb.append("<button class='action-toast-btn' onclick='shellReopenClosedTab(); hideReopenToast();'>Reopen</button>");
-        sb.append("<button class='action-toast-close' onclick='hideReopenToast()' aria-label='Dismiss'>&times;</button>");
-        sb.append("</div>");
+        sb.append("<div id='shellToastContainer' class='action-toast-container'></div>");
         String rootAbsPath = Settings.rootDir().getAbsolutePath().replace("\\", "\\\\").replace("'", "\\'");
         sb.append("<script>var SHELL_ROOT_ABS='").append(rootAbsPath).append("';</script>");
         sb.append(ShellScript.SCRIPT);

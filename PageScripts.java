@@ -52,11 +52,7 @@ public class PageScripts {
         "<button onclick='confirmMoveHere()' class='move-confirm'>Move here</button>" +
         "</div></div></div>" +
 
-        "<div id='actionToast' class='action-toast'>" +
-        "<span id='actionToastMessage'></span>" +
-        "<button id='actionToastBtn' class='action-toast-btn'>Undo</button>" +
-        "<button class='action-toast-close' onclick='hideActionToast()' aria-label='Dismiss'>&times;</button>" +
-        "</div>";
+        "<div id='actionToastContainer' class='action-toast-container'></div>";
 
     public static final String SCRIPT =
         "<script>" +
@@ -325,6 +321,7 @@ public class PageScripts {
         "function showFolderContextMenu(x, y, folderPath){" +
           "var menu=document.getElementById('contextMenu');" +
           "menu.innerHTML=" +
+            "menuItem('Refresh','refresh-folder')+" +
             "menuItem('New folder here','new-folder-here')+" +
             "menuItem('Download this folder as .zip','zip-current-folder');" +
           "menu.dataset.folderPath=folderPath;" +
@@ -332,6 +329,22 @@ public class PageScripts {
           "var maxX=window.innerWidth-menu.offsetWidth-8, maxY=window.innerHeight-menu.offsetHeight-8;" +
           "menu.style.left=Math.min(x,maxX)+'px';" +
           "menu.style.top=Math.min(y,maxY)+'px';" +
+        "}" +
+
+        // Re-fetches just this tab's own URL and swaps in the refreshed
+        // .grid element, instead of location.reload() - a full reload hits
+        // the top-level shell page, tearing down and re-loading every
+        // OTHER open tab's iframe along with it (and collapsing whatever
+        // preview state they had). This only touches the current tab.
+        "function refreshCurrentFolder(){" +
+          "var grid=document.querySelector('.grid[data-current-path]');" +
+          "if(!grid) return;" +
+          "fetch(window.location.href).then(function(r){ return r.text(); }).then(function(html){" +
+            "var doc=new DOMParser().parseFromString(html, 'text/html');" +
+            "var newGrid=doc.querySelector('.grid[data-current-path]');" +
+            "if(newGrid){ grid.outerHTML=newGrid.outerHTML; }" +
+            "if(typeof clearSelection==='function') clearSelection();" +
+          "}).catch(function(){});" +
         "}" +
 
         "function showContextMenu(x, y){" +
@@ -481,6 +494,7 @@ public class PageScripts {
           "}else if(action==='move-selection'){ openMoveModal(selectedPaths.slice()); }" +
           "else if(action==='delete-selection'){ deleteSelection(); }" +
           "else if(action==='new-folder-here'){ newFolder(document.getElementById('contextMenu').dataset.folderPath); }" +
+          "else if(action==='refresh-folder'){ refreshCurrentFolder(); }" +
           "else if(action==='zip-current-folder'){" +
             "window.location.href='/zip?path='+encodeURIComponent(document.getElementById('contextMenu').dataset.folderPath);" +
           "}else if(action==='restore-item'){ restoreItem(card.dataset.trashId, card.dataset.trashSub, card.dataset.name); }" +
@@ -510,14 +524,15 @@ public class PageScripts {
           "}" +
         "}" +
 
-        // ---- Undo/redo action toast (move & rename only - deletes already
-        // have the Trash safety net, so they're deliberately not part of
-        // this) ----
+        // ---- Undo/redo action toast (move, rename, and delete - deletes
+        // undo via the recycle bin: TrashManager still gives it a real
+        // safety net if the toast is missed, but it no longer means delete
+        // is left out of undo entirely) ----
         // Stacks persist in sessionStorage (not JS variables) because every
         // action here reloads the page/iframe afterward, which would
         // otherwise wipe them. Same-origin iframes in the same tab share
         // sessionStorage, so this survives the reload just fine.
-        "var UNDO_STACK_KEY='fd-undo-stack', REDO_STACK_KEY='fd-redo-stack', PENDING_TOAST_KEY='fd-pending-toast';" +
+        "var UNDO_STACK_KEY='fd-undo-stack', REDO_STACK_KEY='fd-redo-stack', PENDING_TOASTS_KEY='fd-pending-toasts';" +
         "var UNDO_STACK_CAP=10;" +
         "function loadStack(key){" +
           "try{ var raw=sessionStorage.getItem(key); return raw?JSON.parse(raw):[]; }catch(e){ return []; }" +
@@ -527,15 +542,24 @@ public class PageScripts {
         "}" +
         "function parentOfPath(p){ var i=p.lastIndexOf('/'); return i===-1?'':p.substring(0,i); }" +
         "function baseNameOfPath(p){ var i=p.lastIndexOf('/'); return i===-1?p:p.substring(i+1); }" +
-        // op = {action:'move'|'rename', items:[{path,destPath} or {path,newName}]}
+        // op = {action:'move'|'rename'|'delete', items:[...]} hits
+        // /fileops as usual; op.action==='trash-restore' is the special
+        // case for undoing a delete - it hits /trashops instead, since
+        // restoring out of the recycle bin isn't a /fileops action.
         "function runOp(op){" +
+          "if(op.action==='trash-restore'){" +
+            "return Promise.all(op.items.map(function(it){" +
+              "return fetch('/trashops',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'restore',id:it.id}).toString()})" +
+                ".then(function(r){return r.json();});" +
+            "}));" +
+          "}" +
           "return Promise.all(op.items.map(function(it){" +
             "var params=Object.assign({action:op.action}, it);" +
             "return postFileOp(new URLSearchParams(params));" +
           "}));" +
         "}" +
-        // Records a just-completed move/rename (undoOp reverses it, redoOp
-        // reapplies it), clears the redo history - a fresh action
+        // Records a just-completed move/rename/delete (undoOp reverses it,
+        // redoOp reapplies it), clears the redo history - a fresh action
         // invalidates any pending redo, same as any editor - and queues the
         // toast to appear once the page (about to be reloaded by the
         // caller) finishes loading.
@@ -546,8 +570,18 @@ public class PageScripts {
           "saveStack(REDO_STACK_KEY, []);" +
           "queueToast(message, 'undo');" +
         "}" +
+        // Queues onto an array (rather than a single slot) so a page load
+        // that somehow has more than one toast waiting - none of today's
+        // flows produce that, but nothing stops a future batched action
+        // from doing so - shows all of them stacked instead of clobbering
+        // each other.
         "function queueToast(message, mode){" +
-          "try{ sessionStorage.setItem(PENDING_TOAST_KEY, JSON.stringify({message:message, mode:mode})); }catch(e){}" +
+          "try{" +
+            "var raw=sessionStorage.getItem(PENDING_TOASTS_KEY);" +
+            "var list=raw?JSON.parse(raw):[];" +
+            "list.push({message:message, mode:mode});" +
+            "sessionStorage.setItem(PENDING_TOASTS_KEY, JSON.stringify(list));" +
+          "}catch(e){}" +
         "}" +
         "function clickUndo(){" +
           "var stack=loadStack(UNDO_STACK_KEY);" +
@@ -571,6 +605,13 @@ public class PageScripts {
           "runOp(entry.redoOp).then(function(results){" +
             "var failed=results.filter(function(r){return !r.success;});" +
             "if(failed.length){ alert('Could not redo: '+failed.map(function(r){return r.message;}).join('; ')); return; }" +
+            // Re-deleting assigns a brand-new trash id, so the undo side of
+            // this entry has to be updated to point at it - otherwise a
+            // later "Undo" would try to restore an id that was already
+            // restored once and is no longer in the recycle bin.
+            "if(entry.redoOp.action==='delete'){" +
+              "entry.undoOp={action:'trash-restore', items:results.map(function(r){ return {id:r.trashId}; })};" +
+            "}" +
             "saveStack(REDO_STACK_KEY, stack);" +
             "var undoStack=loadStack(UNDO_STACK_KEY);" +
             "undoStack.push(entry);" +
@@ -579,26 +620,42 @@ public class PageScripts {
             "location.reload();" +
           "});" +
         "}" +
+        // ---- Toast rendering: a stacking container rather than a single
+        // slot, so e.g. deleting a file and then immediately undoing it
+        // shows both toasts at once instead of the second silently
+        // replacing the first. Each toast is its own DOM node with its own
+        // 5-second timer (paused while hovered, so reading a longer message
+        // or aiming for the Undo button doesn't race the fade-out), and
+        // dismissing one never affects the others.
         "function showActionToast(message, mode){" +
-          "var toast=document.getElementById('actionToast');" +
-          "if(!toast) return;" +
-          "document.getElementById('actionToastMessage').textContent=message;" +
-          "var btn=document.getElementById('actionToastBtn');" +
-          "btn.textContent=mode==='undo'?'Undo':'Redo';" +
-          "btn.onclick=mode==='undo'?clickUndo:clickRedo;" +
-          "toast.classList.add('open');" +
-          "clearTimeout(window._actionToastTimer);" +
-          "window._actionToastTimer=setTimeout(function(){ toast.classList.remove('open'); }, 7000);" +
-        "}" +
-        "function hideActionToast(){" +
-          "var toast=document.getElementById('actionToast');" +
-          "if(toast) toast.classList.remove('open');" +
-          "clearTimeout(window._actionToastTimer);" +
+          "var container=document.getElementById('actionToastContainer');" +
+          "if(!container) return;" +
+          "var toast=document.createElement('div');" +
+          "toast.className='action-toast open';" +
+          "var msg=document.createElement('span');" +
+          "msg.className='action-toast-message'; msg.textContent=message;" +
+          "var btn=document.createElement('button');" +
+          "btn.className='action-toast-btn'; btn.textContent=mode==='undo'?'Undo':'Redo';" +
+          "btn.onclick=function(){ (mode==='undo'?clickUndo:clickRedo)(); remove(); };" +
+          "var closeBtn=document.createElement('button');" +
+          "closeBtn.className='action-toast-close'; closeBtn.innerHTML='&times;'; closeBtn.setAttribute('aria-label','Dismiss');" +
+          "closeBtn.onclick=function(){ remove(); };" +
+          "toast.appendChild(msg); toast.appendChild(btn); toast.appendChild(closeBtn);" +
+          "container.appendChild(toast);" +
+          "var timer;" +
+          "function remove(){ clearTimeout(timer); if(toast.parentNode) toast.parentNode.removeChild(toast); }" +
+          "function arm(){ timer=setTimeout(remove, 5000); }" +
+          "toast.addEventListener('mouseenter', function(){ clearTimeout(timer); });" +
+          "toast.addEventListener('mouseleave', arm);" +
+          "arm();" +
         "}" +
         "(function(){" +
-          "var pending;" +
-          "try{ var raw=sessionStorage.getItem(PENDING_TOAST_KEY); pending=raw?JSON.parse(raw):null; }catch(e){ pending=null; }" +
-          "if(pending){ sessionStorage.removeItem(PENDING_TOAST_KEY); showActionToast(pending.message, pending.mode); }" +
+          "var list=[];" +
+          "try{ var raw=sessionStorage.getItem(PENDING_TOASTS_KEY); list=raw?JSON.parse(raw):[]; }catch(e){ list=[]; }" +
+          "if(list.length){" +
+            "sessionStorage.removeItem(PENDING_TOASTS_KEY);" +
+            "list.forEach(function(p){ showActionToast(p.message, p.mode); });" +
+          "}" +
         "})();" +
         "document.addEventListener('keydown', function(e){" +
           "var tag=document.activeElement?document.activeElement.tagName:'';" +
@@ -632,7 +689,11 @@ public class PageScripts {
         "function deleteItem(path, name){" +
           "if(!confirm('Move \"'+name+'\" to the recycle bin?')) return;" +
           "postFileOp(new URLSearchParams({action:'delete',path:path})).then(function(res){" +
-            "if(res.success){ location.reload(); } else { alert('Delete failed: '+res.message); }" +
+            "if(!res.success){ alert('Delete failed: '+res.message); return; }" +
+            "pushUndoEntry('Moved \"'+name+'\" to the recycle bin'," +
+              "{action:'trash-restore', items:[{id:res.trashId}]}," +
+              "{action:'delete', items:[{path:path}]});" +
+            "location.reload();" +
           "});" +
         "}" +
         // Asks the server to shell out to the OS's native file manager
@@ -660,8 +721,21 @@ public class PageScripts {
           "if(!confirm('Move '+selectedPaths.length+' items to the recycle bin?')) return;" +
           "var paths=selectedPaths.slice();" +
           "Promise.all(paths.map(function(p){" +
-            "return postFileOp(new URLSearchParams({action:'delete',path:p}));" +
-          "})).then(function(){ location.reload(); });" +
+            "return postFileOp(new URLSearchParams({action:'delete',path:p})).then(function(res){ return {path:p, res:res}; });" +
+          "})).then(function(outcomes){" +
+            "var failed=outcomes.filter(function(o){return !o.res.success;});" +
+            "var succeeded=outcomes.filter(function(o){return o.res.success;});" +
+            "if(failed.length){ alert('Some items could not be deleted: '+failed.map(function(o){return o.res.message;}).join('; ')); }" +
+            "if(succeeded.length){" +
+              "var undoItems=succeeded.map(function(o){ return {id:o.res.trashId}; });" +
+              "var redoItems=succeeded.map(function(o){ return {path:o.path}; });" +
+              "var message=succeeded.length===1?" +
+                "('Moved \"'+baseNameOfPath(succeeded[0].path)+'\" to the recycle bin'):" +
+                "('Moved '+succeeded.length+' items to the recycle bin');" +
+              "pushUndoEntry(message, {action:'trash-restore', items:undoItems}, {action:'delete', items:redoItems});" +
+            "}" +
+            "location.reload();" +
+          "});" +
         "}" +
         "function newFolder(parentPath){" +
           "var name=prompt('New folder name:', 'New Folder');" +
