@@ -72,6 +72,7 @@ public class FileServer {
         addContext(server, "/trashops", new TrashOpsHandler());
         addContext(server, "/trash-browse", new TrashBrowseHandler());
         addContext(server, "/trash-file", new TrashFileHandler());
+        addContext(server, "/sessions", new SessionsHandler());
         addContext(server, "/viewer", new ViewerHandler());
         addContext(server, "/save-text", new SaveTextHandler());
         addContext(server, "/reveal", new RevealHandler());

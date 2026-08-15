@@ -3,14 +3,59 @@
 ## Just added, NOT tested at all — verify these first
 This session had no working `javac`/JDK in the sandbox either, so nothing
 below was compiled or run as a real server. Node.js *was* available this
-time, so every embedded-JS string (`ShellScript.java`'s `SCRIPT` and
-`PageScripts.java`'s `SCRIPT`) was mechanically extracted and passed through
-`node --check` to at least confirm they're syntactically valid JS - that
-catches typos/unbalanced brackets/etc. but says nothing about runtime
-correctness (DOM ids that don't exist, wrong argument order, and so on).
+time, so every embedded-JS string (`ShellScript.java`'s `SCRIPT`,
+`PageScripts.java`'s `SCRIPT`, and `SessionsHandler.java`'s `SCRIPT`) was
+mechanically extracted and passed through `node --check` to at least confirm
+they're syntactically valid JS - that catches typos/unbalanced
+brackets/etc. but says nothing about runtime correctness (DOM ids that
+don't exist, wrong argument order, and so on).
 Please build it for real and click through these before trusting them.
 `build/` and `FileDashboard.jar` are stale if present - rebuild via
 `build-jar.bat` or BlueJ.
+
+10. **Sessions** — every *browser tab* of File Dashboard is now its own
+    "session": its own tab bar, its own groups, kept completely separate
+    from any other browser tab of the app you have open. New
+    `SessionsHandler.java` serves `/sessions`, a new sidebar entry between
+    Dashboard and Home ("Sessions", clock icon) - lists every session ever
+    created (`localStorage['fileDashboardSessions']`), lets you rename any
+    of them, delete inactive ones from history, and reopen an inactive one
+    into the current browser tab. The "Open" and "Delete" buttons are
+    disabled for whichever session is open in *this* tab ("This tab" badge)
+    or detected open in some *other* tab ("Open in another tab" badge) - the
+    single-instance rule asked for. How it works: `ShellScript.java` now
+    keys its saved tab/group state off `sessionStorage['fd-session-id']`
+    rather than a single shared `localStorage` key - sessionStorage is
+    scoped to one browser tab, so a brand-new browser tab always finds
+    nothing there and mints a fresh session id (openTab('/dashboard')
+    fires like a first run), while reloading (or navigating within) the
+    SAME browser tab keeps finding its own id and restores normally. Which
+    sessions are "active" is tracked via a lightweight heartbeat
+    (`localStorage['fileDashboardSessionHeartbeats']`) each tab stamps
+    every 4s and releases on `pagehide` - a session is only considered
+    active if stamped within the last 10s, so a crashed/force-closed tab's
+    session frees itself back up within about 10 seconds rather than being
+    permanently stuck. Reopening a session calls
+    `window.parent.shellLoadSession(id)` from the Sessions page's iframe
+    into the shell frame, which tears down the current tab's iframes and
+    rebuilds from the target session's saved tabs. Verify: open the app in
+    two separate browser tabs, confirm they show as two different sessions
+    in Sessions with independent tab bars; from one, try to reopen the
+    other's session and confirm Open is disabled while it's active; close
+    that other browser tab entirely, wait ~10s, refresh Sessions, and
+    confirm Open becomes enabled and actually swaps this tab onto it;
+    rename a session (including the one currently open in this tab) and
+    confirm the name sticks and doesn't get clobbered by the next
+    autosave; reload a single browser tab a few times and confirm it keeps
+    landing on the same session rather than creating a new one each time.
+    **Known gap, not solved this session:** some browsers copy
+    sessionStorage when you explicitly "duplicate" a tab (not a normal new
+    tab/window) - that would hand two real browser tabs the same session
+    id and defeat single-instance enforcement between exactly those two,
+    since neither would ever see the other as "another" tab locally. Worth
+    a second pass if that turns out to matter in practice (e.g. detecting a
+    second heartbeat writer for the same id and forking a fresh id for the
+    later one).
 
 7. **Collapsible tab groups ("folders")** — `ShellScript.java`: tabs can now
    be clustered into named, collapsible groups in the tab bar. Right-click a
@@ -23,6 +68,7 @@ Please build it for real and click through these before trusting them.
    contiguous run afterward so a group can't end up visually split apart.
    Every group uses the same fixed accent color (`.tab-group-header` /
    `.tab.grouped` in `Styles.java`) - deliberately not a per-group color
+
    picker, per what was asked for. Persisted in `localStorage` alongside
    `shellTabs` (see `shellSaveState`/`shellLoadState`). The tab-render path
    was rewritten around this: `shellCreateTabElement` (old, direct DOM
@@ -97,6 +143,12 @@ Please build it for real and click through these before trusting them.
   id; if that group was fully closed/ungrouped in the meantime the tab just
   reopens ungrouped rather than recreating the group - seemed like the
   saner default but worth a second opinion.
+- Sessions (item 10) don't migrate the old pre-session `localStorage`
+  key (`fileDashboardTabs`) - if that key still exists from before this
+  change, it's just dead now and gets ignored; whatever tabs were saved
+  there are effectively lost on first load after upgrading. Didn't seem
+  worth writing one-time migration code for a dev tool with no real users
+  yet, but flagging it in case that assumption is wrong.
 
 ## Testing method used previous sessions (not available this one)
 Built + ran the real server in the sandbox, hit endpoints with curl, and for

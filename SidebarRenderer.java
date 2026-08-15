@@ -2,10 +2,10 @@ import java.io.File;
 
 /**
  * Renders the pinned, collapsible left sidebar used by the app shell: a link
- * back to the Dashboard, a link to the Home folder, and shortcuts to
- * whichever classic OS folders (Desktop, Downloads, Documents, ...) actually
- * exist under Config.ROOT_DIR. Collapsed/expanded state is remembered per
- * browser via localStorage.
+ * back to the Dashboard, the Session Manager, a link to the Home folder, and
+ * shortcuts to whichever classic OS folders (Desktop, Downloads, Documents,
+ * ...) actually exist under Config.ROOT_DIR. Collapsed/expanded state is
+ * remembered per browser via localStorage.
  *
  * Every link navigates the currently active tab in place (like clicking a
  * normal link would) via the shell's navigateCurrentTab() function - it does
@@ -33,6 +33,7 @@ public class SidebarRenderer {
         sb.append("<div class='sidebar-inner'>");
 
         sb.append(item("/dashboard", "&#127968;", "Dashboard"));
+        sb.append(item("/sessions", "&#128337;", "Sessions"));
         sb.append(item("/browse?path=", "&#127760;", "Home"));
         sb.append(item("/trash", "&#128465;", "Recycle Bin"));
         sb.append("<div class='sidebar-divider'></div>");

@@ -1,0 +1,165 @@
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+
+/**
+ * Serves "/sessions" - the Session Manager page. Unlike every other page in
+ * this app, this one has no server-side data to render at all: a "session"
+ * (see ShellScript.java) is a browser tab's own set of open tabs/groups, and
+ * which browser tabs exist is something only the browser knows - the server
+ * never sees it. So this handler just serves the page shell; SCRIPT below
+ * reads localStorage/sessionStorage directly (the same storage ShellScript.java
+ * writes to) and renders the list client-side, re-polling every few seconds
+ * so "open elsewhere" badges stay accurate as other browser tabs come and go.
+ *
+ * Renaming and deleting a session just edit the shared localStorage map
+ * directly - safe from any frame, since ShellScript.java's own save always
+ * merges rather than overwrites. Reopening one, though, has to go through
+ * window.parent.shellLoadSession(id): swapping which session THIS browser
+ * tab is hosting means tearing down and rebuilding the live tab bar/iframes,
+ * and that state only exists in the parent shell frame's memory.
+ */
+public class SessionsHandler implements HttpHandler {
+
+    @Override
+    public void handle(HttpExchange exchange) throws IOException {
+        String html = buildPage();
+        byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
+        exchange.sendResponseHeaders(200, bytes.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(bytes);
+        }
+    }
+
+    private String buildPage() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<!DOCTYPE html><html><head><meta charset='UTF-8'>");
+        sb.append("<meta name='viewport' content='width=device-width, initial-scale=1'>");
+        sb.append("<title>Sessions</title>");
+        sb.append(Styles.CSS);
+        sb.append("</head><body>");
+        sb.append("<div class='page-content'>");
+
+        sb.append("<div class='topbar'>");
+        sb.append("<a class='brand-link' href='/dashboard' onclick=\"if(parent&&parent.navigateCurrentTab){ parent.navigateCurrentTab('/dashboard'); return false; }\"><h1>File Dashboard</h1></a>");
+        sb.append("<div class='breadcrumb'>Sessions</div>");
+        sb.append("</div>");
+
+        sb.append("<p class='session-intro'>Every new browser tab you open on File Dashboard starts its own session - ")
+          .append("its own set of tabs, kept separate from whatever else you have open. A session can only be open in ")
+          .append("one browser tab at a time, so reopening one below moves it here.</p>");
+
+        sb.append("<div id='sessionList' class='session-list'><p class='empty'>Loading...</p></div>");
+
+        sb.append(SCRIPT);
+        sb.append("</div></body></html>");
+        return sb.toString();
+    }
+
+    private static final String SCRIPT =
+        "<script>" +
+        "var SESSIONS_KEY='fileDashboardSessions';" +
+        "var HEARTBEATS_KEY='fileDashboardSessionHeartbeats';" +
+        "var SESSION_ID_KEY='fd-session-id';" +
+        // Matches ShellScript.java's own HEARTBEAT_STALE_MS - a session
+        // counts as "open elsewhere" if its last heartbeat is more recent
+        // than this, otherwise it's treated as safely reopenable even if
+        // its owning tab never got a clean shutdown (crash, force-quit).
+        "var HEARTBEAT_STALE_MS=10000;" +
+
+        "function fdFormatDate(ts){" +
+          "var d=new Date(ts);" +
+          "return d.toLocaleDateString([], {month:'short', day:'numeric'}) + ' ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});" +
+        "}" +
+        "function loadSessionsMap(){" +
+          "try{ var raw=localStorage.getItem(SESSIONS_KEY); return raw?JSON.parse(raw):{}; }catch(e){ return {}; }" +
+        "}" +
+        "function saveSessionsMap(map){" +
+          "try{ localStorage.setItem(SESSIONS_KEY, JSON.stringify(map)); }catch(e){}" +
+        "}" +
+        "function loadHeartbeats(){" +
+          "try{ var raw=localStorage.getItem(HEARTBEATS_KEY); return raw?JSON.parse(raw):{}; }catch(e){ return {}; }" +
+        "}" +
+        "function isSessionActive(id){" +
+          "var hb=loadHeartbeats()[id];" +
+          "return !!hb && (Date.now()-hb)<HEARTBEAT_STALE_MS;" +
+        "}" +
+        // Same-origin iframes share sessionStorage with their top-level
+        // browser tab, so this reads the exact same value ShellScript.java
+        // set in the parent frame - no cross-frame call needed just to know
+        // which session THIS browser tab is currently on.
+        "function currentSessionId(){" +
+          "try{ return sessionStorage.getItem(SESSION_ID_KEY); }catch(e){ return null; }" +
+        "}" +
+
+        "function escapeHtml(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }" +
+
+        "function renderSessions(){" +
+          "var list=document.getElementById('sessionList');" +
+          "var sessions=loadSessionsMap();" +
+          "var ids=Object.keys(sessions);" +
+          "if(!ids.length){ list.innerHTML=\"<p class='empty'>No sessions yet.</p>\"; return; }" +
+          "var mine=currentSessionId();" +
+          "ids.sort(function(a,b){ return (sessions[b].updatedAt||0)-(sessions[a].updatedAt||0); });" +
+          "list.innerHTML=ids.map(function(id){" +
+            "var s=sessions[id];" +
+            "var active=isSessionActive(id);" +
+            "var isMine=(id===mine);" +
+            "var badge=isMine?\"<span class='session-badge session-badge-current'>This tab</span>\":" +
+              "(active?\"<span class='session-badge session-badge-active'>Open in another tab</span>\":'');" +
+            "var tabCount=(s.tabs||[]).length;" +
+            "var name=escapeHtml(s.name||'Untitled session');" +
+            "var locked=(isMine||active);" +
+            "return \"<div class='session-row' data-session-id=\\\"\"+id+\"\\\">\" +" +
+              "\"<div class='session-info'>\" +" +
+                "\"<div class='session-name-row'><span class='session-name'>\"+name+\"</span>\"+badge+\"</div>\" +" +
+                "\"<div class='session-meta'>\"+tabCount+\" tab\"+(tabCount===1?'':'s')+\" &middot; updated \"+fdFormatDate(s.updatedAt||s.createdAt||Date.now())+\"</div>\" +" +
+              "\"</div>\" +" +
+              "\"<div class='session-actions'>\" +" +
+                "\"<button class='session-btn' data-session-action='rename'>Rename</button>\" +" +
+                "\"<button class='session-btn session-btn-primary' data-session-action='open'\"+(locked?' disabled':'')+\" title=\\\"\"+(locked?(isMine?'This is the session currently open in this tab':'Already open in another tab'):'')+\"\\\">Open</button>\" +" +
+                "\"<button class='session-btn session-btn-danger' data-session-action='delete'\"+(locked?' disabled':'')+\">Delete</button>\" +" +
+              "\"</div>\" +" +
+            "\"</div>\";" +
+          "}).join('');" +
+        "}" +
+
+        "document.addEventListener('click', function(e){" +
+          "var btn=e.target.closest('[data-session-action]');" +
+          "if(!btn||btn.disabled) return;" +
+          "var row=btn.closest('.session-row');" +
+          "var id=row.dataset.sessionId;" +
+          "var action=btn.dataset.sessionAction;" +
+          "if(action==='rename'){" +
+            "var sessions=loadSessionsMap();" +
+            "var s=sessions[id];" +
+            "if(!s) return;" +
+            "var name=prompt('Rename session:', s.name||'');" +
+            "if(!name) return;" +
+            "s.name=name;" +
+            "saveSessionsMap(sessions);" +
+            "renderSessions();" +
+          "}else if(action==='open'){" +
+            // Defensive re-check right at click time, in case the badge
+            // went stale between the last render and now (another tab
+            // could have grabbed it in the last couple seconds).
+            "if(isSessionActive(id) || id===currentSessionId()){ renderSessions(); return; }" +
+            "if(window.parent && window.parent.shellLoadSession){ window.parent.shellLoadSession(id); }" +
+          "}else if(action==='delete'){" +
+            "if(isSessionActive(id) || id===currentSessionId()) return;" +
+            "if(!confirm('Delete this session from history? This cannot be undone.')) return;" +
+            "var sessions=loadSessionsMap();" +
+            "delete sessions[id];" +
+            "saveSessionsMap(sessions);" +
+            "renderSessions();" +
+          "}" +
+        "});" +
+
+        "renderSessions();" +
+        "setInterval(renderSessions, 3000);" +
+        "</script>";
+}

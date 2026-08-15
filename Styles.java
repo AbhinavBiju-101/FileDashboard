@@ -43,6 +43,29 @@ public class Styles {
         ".toolbar-action{color:#2563eb;text-decoration:none;}" +
         ".toolbar-action:hover{text-decoration:underline;}" +
         ".toolbar-action.active{font-weight:600;}" +
+
+        // ---- Session Manager ("/sessions") ----
+        ".session-intro{margin:12px 24px 0;color:#666;font-size:13px;line-height:1.5;max-width:640px;}" +
+        ".session-list{padding:16px 24px 24px;display:flex;flex-direction:column;gap:10px;}" +
+        ".session-row{background:#fff;border:1px solid #e2e4e8;border-radius:10px;padding:12px 16px;" +
+          "display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}" +
+        ".session-info{min-width:0;}" +
+        ".session-name-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}" +
+        ".session-name{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;}" +
+        ".session-meta{font-size:12px;color:#888;margin-top:3px;}" +
+        ".session-badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;white-space:nowrap;}" +
+        ".session-badge-current{background:#e6f4ea;color:#1a7f37;}" +
+        ".session-badge-active{background:#fff1e6;color:#b5590a;}" +
+        ".session-actions{display:flex;gap:8px;flex-shrink:0;}" +
+        ".session-btn{background:#f4f5f7;border:1px solid #d7dae0;color:#333;padding:6px 12px;" +
+          "border-radius:6px;font-size:12px;cursor:pointer;}" +
+        ".session-btn:hover{background:#eceef1;}" +
+        ".session-btn-primary{background:#2563eb;border-color:#2563eb;color:#fff;}" +
+        ".session-btn-primary:hover{background:#1d4ed8;}" +
+        ".session-btn-danger:hover{background:#fdecea;border-color:#f3b4ae;color:#c00;}" +
+        ".session-btn:disabled{opacity:.45;cursor:not-allowed;}" +
+        ".session-btn:disabled:hover{background:#f4f5f7;color:#333;}" +
+        ".session-btn-primary:disabled:hover{background:#2563eb;color:#fff;}" +
         ".search-inline{display:flex;gap:6px;}" +
         ".search-suggest-wrap{position:relative;margin-left:auto;}" +
         ".search-suggestions{display:none;position:absolute;top:100%;left:0;right:0;margin-top:4px;" +

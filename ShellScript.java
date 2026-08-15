@@ -6,8 +6,13 @@
  * updates that tab's name on its own, no extra plumbing needed on the
  * content-page side.
  *
- * Open tabs are remembered in localStorage so a page reload (or even
- * closing and reopening the browser) doesn't lose them.
+ * A whole tab bar (tabs + groups + which one's active) is a "session" - see
+ * the session block below. Every *browser* tab gets its own session
+ * (sessionStorage is per-browser-tab, unlike localStorage), so opening a
+ * new browser tab always starts fresh, while reloading the same browser tab
+ * restores exactly what it had. All sessions - past and present - live in
+ * one localStorage map so the Session Manager page (SessionsHandler.java,
+ * "/sessions") can list, rename, delete, and reopen them.
  */
 public class ShellScript {
 
@@ -32,29 +37,172 @@ public class ShellScript {
         "var shellGroupHeaderEls={};" +
         "function shellEscapeHtml(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;'); }" +
 
+        // ---- Sessions ----
+        // SESSIONS_KEY holds every session ever created (id -> {id, name,
+        // tabs, groups, active, createdAt, updatedAt}), shared across every
+        // browser tab via localStorage - this is what the Session Manager
+        // page reads to build its history list. shellSessionId is which
+        // entry in that map THIS browser tab is currently hosting, and it
+        // lives in sessionStorage rather than localStorage specifically
+        // because sessionStorage is scoped to one browser tab: a genuinely
+        // new browser tab finds nothing there and mints a fresh session,
+        // while reloading (or navigating within) the SAME browser tab keeps
+        // finding the same id and restores it. Same-origin iframes inside a
+        // tab share its sessionStorage too, which is what lets the Sessions
+        // page read shellSessionId without asking the parent frame for it.
+        //
+        // HEARTBEATS_KEY is how a session is known to be "currently open in
+        // some browser tab" without any direct tab-to-tab messaging: every
+        // open tab stamps its own session with the current time every few
+        // seconds, and anything stamped within HEARTBEAT_STALE_MS counts as
+        // active. That staleness window (rather than an exact open/closed
+        // flag) is what makes a crashed/force-closed tab's session become
+        // reopenable again on its own within a few seconds, instead of
+        // being permanently stuck "active" with no tab left to release it.
+        "var SESSIONS_KEY='fileDashboardSessions';" +
+        "var HEARTBEATS_KEY='fileDashboardSessionHeartbeats';" +
+        "var SESSION_ID_KEY='fd-session-id';" +
+        "var HEARTBEAT_INTERVAL_MS=4000;" +
+        "var HEARTBEAT_STALE_MS=10000;" +
+        "var shellSessionId=null;" +
+        "var shellHeartbeatTimer=null;" +
+
+        "function fdFormatDate(ts){" +
+          "var d=new Date(ts);" +
+          "return d.toLocaleDateString([], {month:'short', day:'numeric'}) + ' ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});" +
+        "}" +
+        "function shellGenerateSessionId(){" +
+          "return 's-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7);" +
+        "}" +
+        "function shellLoadSessionsMap(){" +
+          "try{ var raw=localStorage.getItem(SESSIONS_KEY); return raw?JSON.parse(raw):{}; }catch(e){ return {}; }" +
+        "}" +
+        "function shellSaveSessionsMap(map){" +
+          "try{ localStorage.setItem(SESSIONS_KEY, JSON.stringify(map)); }catch(e){}" +
+        "}" +
+        "function shellLoadHeartbeats(){" +
+          "try{ var raw=localStorage.getItem(HEARTBEATS_KEY); return raw?JSON.parse(raw):{}; }catch(e){ return {}; }" +
+        "}" +
+        "function shellSaveHeartbeats(map){" +
+          "try{ localStorage.setItem(HEARTBEATS_KEY, JSON.stringify(map)); }catch(e){}" +
+        "}" +
+        "function shellIsSessionActive(id){" +
+          "var hb=shellLoadHeartbeats()[id];" +
+          "return !!hb && (Date.now()-hb)<HEARTBEAT_STALE_MS;" +
+        "}" +
+        "function shellTouchHeartbeat(){" +
+          "if(!shellSessionId) return;" +
+          "var hb=shellLoadHeartbeats();" +
+          "hb[shellSessionId]=Date.now();" +
+          "shellSaveHeartbeats(hb);" +
+        "}" +
+        "function shellReleaseHeartbeat(){" +
+          "if(!shellSessionId) return;" +
+          "var hb=shellLoadHeartbeats();" +
+          "delete hb[shellSessionId];" +
+          "shellSaveHeartbeats(hb);" +
+        "}" +
+        // Figures out which session this browser tab is on: an id already
+        // sitting in sessionStorage means this is a reload (or an internal
+        // navigation) of a browser tab we've already claimed, so keep using
+        // it; finding nothing means this browser tab has never had one -
+        // genuinely new - so mint a fresh id and claim it. Returns whether
+        // it found an existing one, since that's what shellLoadState() uses
+        // to decide whether there's anything worth restoring.
+        "function shellInitSession(){" +
+          "var existingId;" +
+          "try{ existingId=sessionStorage.getItem(SESSION_ID_KEY); }catch(e){ existingId=null; }" +
+          "if(existingId){ shellSessionId=existingId; return true; }" +
+          "shellSessionId=shellGenerateSessionId();" +
+          "try{ sessionStorage.setItem(SESSION_ID_KEY, shellSessionId); }catch(e){}" +
+          "return false;" +
+        "}" +
+
         "function shellSaveState(){" +
-          "try{ localStorage.setItem('fileDashboardTabs', JSON.stringify({tabs:shellTabs, active:shellActiveTabId, groups:shellGroups})); }catch(e){}" +
+          "try{" +
+            "var sessions=shellLoadSessionsMap();" +
+            "var existing=sessions[shellSessionId];" +
+            "sessions[shellSessionId]={" +
+              "id:shellSessionId," +
+              "name:(existing&&existing.name)||('Session '+fdFormatDate(Date.now()))," +
+              "tabs:shellTabs," +
+              "active:shellActiveTabId," +
+              "groups:shellGroups," +
+              "createdAt:(existing&&existing.createdAt)||Date.now()," +
+              "updatedAt:Date.now()" +
+            "};" +
+            "shellSaveSessionsMap(sessions);" +
+          "}catch(e){}" +
         "}" +
 
         "function shellLoadState(){" +
+          "var hadExistingSession=shellInitSession();" +
+          "shellTouchHeartbeat();" +
+          "if(!shellHeartbeatTimer){ shellHeartbeatTimer=setInterval(shellTouchHeartbeat, HEARTBEAT_INTERVAL_MS); }" +
+          "if(!hadExistingSession) return false;" +
           "try{" +
-            "var raw=localStorage.getItem('fileDashboardTabs');" +
-            "if(!raw) return false;" +
-            "var state=JSON.parse(raw);" +
-            "if(!state.tabs||!state.tabs.length) return false;" +
-            "shellGroups=state.groups||[];" +
+            "var sessions=shellLoadSessionsMap();" +
+            "var s=sessions[shellSessionId];" +
+            "if(!s||!s.tabs||!s.tabs.length) return false;" +
+            "shellGroups=s.groups||[];" +
             "shellGroupCounter=shellGroups.reduce(function(m,g){" +
               "var n=parseInt(g.id.replace('group-',''),10); return isNaN(n)?m:Math.max(m,n);" +
             "},0);" +
-            "shellTabs=state.tabs;" +
+            "shellTabs=s.tabs;" +
             "shellTabs.forEach(function(t){ shellCreateTab(t.id, t.url, t.title); });" +
             "shellTabCounter=shellTabs.reduce(function(m,t){" +
               "var n=parseInt(t.id.replace('tab-',''),10); return isNaN(n)?m:Math.max(m,n);" +
             "},0);" +
-            "shellSetActiveTab(state.active && shellTabs.some(function(t){return t.id===state.active;}) ? state.active : shellTabs[0].id);" +
+            "shellSetActiveTab(s.active && shellTabs.some(function(t){return t.id===s.active;}) ? s.active : shellTabs[0].id);" +
             "return true;" +
           "}catch(e){ return false; }" +
         "}" +
+
+        // Called from the Session Manager page (via
+        // window.parent.shellLoadSession(id)) to switch THIS browser tab
+        // onto a different, currently-inactive session - tearing down every
+        // tab/iframe it has open now and rebuilding from the target
+        // session's saved tabs/groups. The session this tab is leaving
+        // behind isn't deleted - it stays in history exactly as last saved,
+        // just idle (its heartbeat entry is released) until something
+        // reopens it.
+        "function shellLoadSession(targetId){" +
+          "if(!targetId || targetId===shellSessionId) return false;" +
+          "if(shellIsSessionActive(targetId)){ alert('That session is currently open in another tab.'); return false; }" +
+          "var sessions=shellLoadSessionsMap();" +
+          "var s=sessions[targetId];" +
+          "if(!s){ alert('That session no longer exists.'); return false; }" +
+
+          "shellReleaseHeartbeat();" +
+
+          "Object.keys(shellToastEls||{}).forEach(function(cid){ shellRemoveReopenToast(cid); });" +
+          "shellClosedTabsStack=[];" +
+          "Object.keys(shellTabEls).forEach(function(id){ var el=shellTabEls[id]; if(el&&el.parentNode) el.parentNode.removeChild(el); });" +
+          "shellTabEls={};" +
+          "shellGroupHeaderEls={};" +
+          "Array.prototype.slice.call(document.querySelectorAll('.tabcontent iframe')).forEach(function(f){ f.remove(); });" +
+
+          "shellSessionId=targetId;" +
+          "try{ sessionStorage.setItem(SESSION_ID_KEY, shellSessionId); }catch(e){}" +
+          "shellGroups=s.groups||[];" +
+          "shellGroupCounter=shellGroups.reduce(function(m,g){" +
+            "var n=parseInt(g.id.replace('group-',''),10); return isNaN(n)?m:Math.max(m,n);" +
+          "},0);" +
+          "shellTabs=s.tabs||[];" +
+          "shellTabCounter=shellTabs.reduce(function(m,t){" +
+            "var n=parseInt(t.id.replace('tab-',''),10); return isNaN(n)?m:Math.max(m,n);" +
+          "},0);" +
+          "if(shellTabs.length){" +
+            "shellTabs.forEach(function(t){ shellCreateTab(t.id, t.url, t.title); });" +
+            "shellSetActiveTab(s.active && shellTabs.some(function(t){return t.id===s.active;}) ? s.active : shellTabs[0].id);" +
+          "}else{" +
+            "openTab('/dashboard','Dashboard');" +
+          "}" +
+          "shellTouchHeartbeat();" +
+          "shellSaveState();" +
+          "return true;" +
+        "}" +
+        "window.addEventListener('pagehide', shellReleaseHeartbeat);" +
 
         "function openTab(url, fallbackLabel){" +
           "var existing=shellTabs.find(function(t){ return t.url===url; });" +
