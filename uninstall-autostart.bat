@@ -1,4 +1,7 @@
 @echo off
+pushd "%~dp0"
+
+set REGKEY=HKCU\Software\Microsoft\Windows\CurrentVersion\Run
 set TASKNAME=FileDashboard
 
 echo ============================================
@@ -6,21 +9,24 @@ echo  Removing FileDashboard autostart
 echo ============================================
 echo.
 
-schtasks /query /tn "%TASKNAME%" >nul 2>&1
+:: Checks the registry to see if the entry exists before attempting deletion
+reg query "%REGKEY%" /v "%TASKNAME%" >nul 2>&1
 if errorlevel 1 (
-    echo No autostart task named "%TASKNAME%" was found - nothing to remove.
+    echo No autostart entry named "%TASKNAME%" was found in the registry - nothing to remove.
     echo.
+    popd
     pause
     exit /b 0
 )
 
-schtasks /delete /tn "%TASKNAME%" /f
+:: Deletes the specific value from the current user's Run path
+reg delete "%REGKEY%" /v "%TASKNAME%" /f
 
 if errorlevel 1 (
     echo.
-    echo *** Could not remove the task automatically. ***
-    echo You can remove it manually: open Task Scheduler, find "%TASKNAME%", and delete it.
+    echo *** Failed to remove the autostart registry entry. ***
     echo.
+    popd
     pause
     exit /b 1
 )
@@ -29,4 +35,5 @@ echo.
 echo Done. File Dashboard will no longer start automatically at logon.
 echo (If it's currently running, this doesn't stop it - run stop.bat for that.)
 echo.
+popd
 pause

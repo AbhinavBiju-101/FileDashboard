@@ -1,5 +1,5 @@
 #BlueJ class context
-#Sun Aug 02 08:07:34 IST 2026
+#Sun Aug 02 13:02:52 IST 2026
 comment0.target=SettingsHandler
 comment0.text=\r\n Serves "/settings" - GET renders the page, POST applies changes and\r\n redirects back to GET with a status message. A plain form-POST page\r\n rather than an AJAX one, since settings changes are infrequent and a full\r\n reload on save is perfectly fine here.\r\n
 comment1.params=exchange

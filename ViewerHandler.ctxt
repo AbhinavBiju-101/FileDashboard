@@ -1,5 +1,5 @@
 #BlueJ class context
-#Sun Aug 02 08:07:34 IST 2026
+#Sun Aug 02 13:02:52 IST 2026
 comment0.target=ViewerHandler
 comment0.text=\r\n Serves "/viewer?path\=..." - a dedicated full-tab reading view for PDFs and\r\n text/markdown files, as an alternative to the quick preview modal. Opened\r\n via the right-click "Open Viewer" menu item, which loads it as a new app\r\n tab (via parent.openTab) rather than a small overlay - meant for actually\r\n reading something at length rather than a quick glance.\r\n\r\n Includes Previous/Next links (and Left/Right arrow keys) that step through\r\n sibling files of the same kind in the same folder, so flipping between\r\n chapters/books in a folder doesn't require going back to the grid each time.\r\n
 comment1.params=exchange

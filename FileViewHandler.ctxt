@@ -1,5 +1,5 @@
 #BlueJ class context
-#Sun Aug 02 08:07:34 IST 2026
+#Sun Aug 02 13:02:52 IST 2026
 comment0.target=FileViewHandler
 comment0.text=\r\n Serves "/file?path\=...&mode\=view|download|preview".\r\n\r\n mode\=view     streams the file inline (browser renders images/PDFs/text/video directly).\r\n mode\=download forces a Save As via Content-Disposition\: attachment.\r\n mode\=preview  used for file types the browser can't render (docx, zip, etc.) -\r\n               shows a small "no preview available" page with a Download button,\r\n               instead of letting the browser dump raw bytes as a garbled "file".\r\n\r\n Also supports HTTP Range requests (RFC 7233) for view/download, which is what\r\n lets a browser seek/scrub within audio or video, and resume interrupted downloads.\r\n
 comment1.params=exchange

@@ -1,5 +1,5 @@
 #BlueJ class context
-#Sun Aug 02 08:07:34 IST 2026
+#Sun Aug 02 13:02:52 IST 2026
 comment0.target=RecentActivity
 comment0.text=\r\n Tracks activity for the home dashboard\: how often each file gets viewed,\r\n recently downloaded files, and how often each folder gets browsed -\r\n persisted to a small JSON file (Config.DATA_DIR/activity.json) so it\r\n survives restarts.\r\n\r\n viewCounts/folderVisitCounts are simple all-time tallies (never evicted) -\r\n that's deliberate for "frequently viewed"\: a file you've opened 50 times\r\n shouldn't drop off the list just because you haven't touched it this week.\r\n recentViewed/recentDownloaded stay as access-ordered LinkedHashMaps (a\r\n cheap MRU cache, capped) - recentViewed is no longer shown on the\r\n Dashboard directly, but both still feed the search-suggestion ranker,\r\n where "you just looked at this" is a useful signal even for a one-off view.\r\n
 comment1.params=eldest

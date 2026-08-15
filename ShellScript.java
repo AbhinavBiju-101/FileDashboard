@@ -6,9 +6,8 @@
  * updates that tab's name on its own, no extra plumbing needed on the
  * content-page side.
  *
- * Open tabs are remembered in sessionStorage so a shell page reload doesn't
- * lose them (but a fresh browser session starts clean, which feels right
- * for "windows/tabs" rather than permanent bookmarks).
+ * Open tabs are remembered in localStorage so a page reload (or even
+ * closing and reopening the browser) doesn't lose them.
  */
 public class ShellScript {
 
@@ -19,12 +18,12 @@ public class ShellScript {
         "var shellTabCounter=0;" +
 
         "function shellSaveState(){" +
-          "try{ sessionStorage.setItem('fileDashboardTabs', JSON.stringify({tabs:shellTabs, active:shellActiveTabId})); }catch(e){}" +
+          "try{ localStorage.setItem('fileDashboardTabs', JSON.stringify({tabs:shellTabs, active:shellActiveTabId})); }catch(e){}" +
         "}" +
 
         "function shellLoadState(){" +
           "try{" +
-            "var raw=sessionStorage.getItem('fileDashboardTabs');" +
+            "var raw=localStorage.getItem('fileDashboardTabs');" +
             "if(!raw) return false;" +
             "var state=JSON.parse(raw);" +
             "if(!state.tabs||!state.tabs.length) return false;" +
@@ -89,15 +88,21 @@ public class ShellScript {
             "try{" +
               "var doc=iframe.contentDocument;" +
               "var newTitle=(doc && doc.title) ? doc.title : title;" +
-              "shellUpdateTabTitle(id, newTitle);" +
+              "var newUrl=iframe.contentWindow.location.pathname+iframe.contentWindow.location.search;" +
+              "shellUpdateTab(id, newTitle, newUrl);" +
             "}catch(e){}" +
           "};" +
           "document.getElementById('tabcontent').appendChild(iframe);" +
         "}" +
 
-        "function shellUpdateTabTitle(id, newTitle){" +
+        // Keeps both title AND url in sync with wherever the tab actually
+        // navigated to - not just when navigateCurrentTab() was called, but
+        // also when navigation happened from a normal link click inside the
+        // tab's own content (e.g. clicking into a subfolder). Otherwise a
+        // restored tab would jump back to a stale starting location.
+        "function shellUpdateTab(id, newTitle, newUrl){" +
           "var tabObj=shellTabs.find(function(t){ return t.id===id; });" +
-          "if(tabObj) tabObj.title=newTitle;" +
+          "if(tabObj){ tabObj.title=newTitle; if(newUrl) tabObj.url=newUrl; }" +
           "var btn=document.getElementById(id);" +
           "if(btn){ var span=btn.querySelector('.tab-title'); if(span) span.textContent=newTitle; }" +
           "shellSaveState();" +

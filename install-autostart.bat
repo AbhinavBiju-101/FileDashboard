@@ -2,6 +2,7 @@
 setlocal enabledelayedexpansion
 pushd "%~dp0"
 
+set REGKEY=HKCU\Software\Microsoft\Windows\CurrentVersion\Run
 set TASKNAME=FileDashboard
 set JARPATH=%~dp0FileDashboard.jar
 
@@ -41,16 +42,17 @@ if not defined JAVAW (
 echo Found: %JAVAW%
 echo Jar:   %JARPATH%
 echo.
-echo Creating a scheduled task that starts File Dashboard when you log in
-echo (this is the closest Windows equivalent to a "systemctl --user enable"
-echo  style autostart - it runs in your own account, no admin rights needed)...
+echo Adding autostart entry directly to Windows Registry...
+echo (This avoids Task Scheduler character limits and McAfee false positives)
 echo.
 
-schtasks /create /tn "%TASKNAME%" /tr "\"%JAVAW%\" -jar \"%JARPATH%\"" /sc onlogon /rl limited /f
+:: Add the run command directly to the current user's registry startup keys.
+:: No admin rights required, perfectly handles the nested paths, completely invisible.
+reg add "%REGKEY%" /v "%TASKNAME%" /t REG_SZ /d "\"%JAVAW%\" -jar \"%JARPATH%\"" /f
 
 if errorlevel 1 (
     echo.
-    echo *** Something went wrong creating the scheduled task. See the message above. ***
+    echo *** Something went wrong writing to the registry. See the error above. ***
     echo.
     popd
     pause

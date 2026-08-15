@@ -1,5 +1,5 @@
 #BlueJ class context
-#Sun Aug 02 08:07:34 IST 2026
+#Sun Aug 02 13:02:52 IST 2026
 comment0.target=HomeHandler
 comment0.text=\r\n Serves "/dashboard" - the landing dashboard. This is deliberately separate\r\n from the folder browser at "/browse"\: it's a quick-launch surface\r\n (frequently viewed files, recently downloaded files, frequently visited\r\n folders), not a directory listing. It's loaded as a tab inside the app\r\n shell ("/") rather than being the shell itself.\r\n\r\n All three sections are horizontally-scrollable rows rather than wrapping\r\n grids, and capped at Settings.getDashboardMaxItems() (20 by default) -\r\n keeps the page a fixed, predictable height no matter how much activity\r\n has piled up.\r\n
 comment1.params=exchange

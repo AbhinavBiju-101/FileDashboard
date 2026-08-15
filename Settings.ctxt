@@ -1,5 +1,5 @@
 #BlueJ class context
-#Sun Aug 02 08:07:34 IST 2026
+#Sun Aug 02 13:02:52 IST 2026
 comment0.target=Settings
 comment0.text=\r\n Runtime-configurable settings, persisted to Config.DATA_DIR/settings.json.\r\n Config.java's constants remain the compile-time defaults; anything set\r\n here overrides them for the current and future runs, without needing to\r\n edit source and recompile - specifically so "which folder does Home open"\r\n can be changed from the Settings page instead of Config.java.\r\n
 comment1.target=java.io.File rootDir()

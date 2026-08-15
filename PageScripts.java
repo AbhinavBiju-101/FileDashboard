@@ -175,11 +175,10 @@ public class PageScripts {
             "menuItem('New folder here','new-folder-here')+" +
             "menuItem('Download this folder as .zip','zip-current-folder');" +
           "menu.dataset.folderPath=folderPath;" +
-          "menu.style.display='block';" +
+          "menu.classList.add('open');" +
           "var maxX=window.innerWidth-menu.offsetWidth-8, maxY=window.innerHeight-menu.offsetHeight-8;" +
           "menu.style.left=Math.min(x,maxX)+'px';" +
           "menu.style.top=Math.min(y,maxY)+'px';" +
-          "menu.classList.add('open');" +
         "}" +
 
         "function showContextMenu(x, y){" +
@@ -217,11 +216,10 @@ public class PageScripts {
             "}" +
           "}" +
           "menu.innerHTML=html;" +
-          "menu.style.display='block';" +
+          "menu.classList.add('open');" +
           "var maxX=window.innerWidth-menu.offsetWidth-8, maxY=window.innerHeight-menu.offsetHeight-8;" +
           "menu.style.left=Math.min(x,maxX)+'px';" +
           "menu.style.top=Math.min(y,maxY)+'px';" +
-          "menu.classList.add('open');" +
         "}" +
         "function hideContextMenu(){ document.getElementById('contextMenu').classList.remove('open'); }" +
 

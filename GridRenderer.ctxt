@@ -1,5 +1,5 @@
 #BlueJ class context
-#Sun Aug 02 08:07:34 IST 2026
+#Sun Aug 02 13:02:52 IST 2026
 comment0.target=GridRenderer
 comment0.text=\r\n Renders a single folder or file as an HTML grid card. Shared between\r\n HomeHandler, BrowseHandler, SearchHandler, and TrashHandler.\r\n\r\n Cards are deliberately minimal now - just an icon/thumbnail and a name.\r\n Every action (view, download, rename, duplicate, move, delete) lives in\r\n the right-click context menu instead of a row of always-visible links -\r\n see PageScripts.java for the selection model and menu logic. Single click\r\n selects a card (or extends a selection with Ctrl/Shift); double-click\r\n opens it; right-click shows the menu.\r\n
 comment1.params=childRel displayName

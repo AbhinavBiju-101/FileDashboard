@@ -1,5 +1,5 @@
 #BlueJ class context
-#Sun Aug 02 08:07:34 IST 2026
+#Sun Aug 02 13:02:52 IST 2026
 comment0.target=FileOpsHandler
 comment0.text=\r\n Handles "POST /fileops" with a form-encoded body\: action\=..., plus\r\n whatever that action needs\:\r\n  - rename\:         path, newName\r\n  - duplicate\:      path\r\n  - delete\:         path                          (moves to the recycle bin)\r\n  - create-folder\:  path (parent folder), newName\r\n  - move\:           path (source), destPath (target folder)\r\n Responds with a small JSON object\: {"success"\: true/false, "message"\: "..."}.\r\n
 comment1.params=exchange

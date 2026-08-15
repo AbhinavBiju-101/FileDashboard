@@ -1,5 +1,5 @@
 #BlueJ class context
-#Sun Aug 02 08:07:34 IST 2026
+#Sun Aug 02 13:02:52 IST 2026
 comment0.target=SidebarRenderer
 comment0.text=\r\n Renders the pinned, collapsible left sidebar used by the app shell\: a link\r\n back to the Dashboard, a link to the Home folder, and shortcuts to\r\n whichever classic OS folders (Desktop, Downloads, Documents, ...) actually\r\n exist under Config.ROOT_DIR. Collapsed/expanded state is remembered per\r\n browser via localStorage.\r\n\r\n Every link navigates the currently active tab in place (like clicking a\r\n normal link would) via the shell's navigateCurrentTab() function - it does\r\n NOT open a new tab each time. The "+" button in the tab bar is the only\r\n thing that creates a genuinely new tab. The sidebar itself lives only in\r\n the shell page, not inside any individual tab's iframe.\r\n
 comment1.target=java.lang.String render()

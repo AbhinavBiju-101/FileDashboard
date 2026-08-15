@@ -1,5 +1,5 @@
 #BlueJ class context
-#Sun Aug 02 08:07:34 IST 2026
+#Sun Aug 02 13:02:52 IST 2026
 comment0.target=AutostartManager
 comment0.text=\r\n Wraps the same Windows Scheduled Task mechanism used by\r\n install-autostart.bat / uninstall-autostart.bat, so the toggle on the\r\n Settings page can enable/disable autostart directly instead of requiring\r\n those scripts to be run manually. Only does anything on Windows; reports\r\n a clear "not supported" message elsewhere rather than failing oddly.\r\n
 comment1.target=boolean isWindows()

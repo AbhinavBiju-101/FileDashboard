@@ -1,5 +1,5 @@
 #BlueJ class context
-#Sun Aug 02 08:07:34 IST 2026
+#Sun Aug 02 13:02:52 IST 2026
 comment0.target=BrowseHandler
 comment0.text=\r\n Serves "/browse?path\=..."\: a grid view of whatever folder is requested,\r\n relative to Settings.rootDir() (your home directory by default, or\r\n search, whole-folder zip download, and a live auto-refresh connection.\r\n
 comment1.params=exchange

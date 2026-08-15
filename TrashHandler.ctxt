@@ -1,5 +1,5 @@
 #BlueJ class context
-#Sun Aug 02 08:07:34 IST 2026
+#Sun Aug 02 13:02:52 IST 2026
 comment0.target=TrashHandler
 comment0.text=\r\n Serves "/trash" - the recycle bin page. Lists everything moved there by\r\n FileOpsHandler's delete action, each with its original location and\r\n when it was deleted, with Restore and "Delete forever" per item, plus an\r\n "Empty trash" action for everything at once.\r\n
 comment1.params=exchange

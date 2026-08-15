@@ -1,5 +1,5 @@
 #BlueJ class context
-#Sun Aug 02 08:07:34 IST 2026
+#Sun Aug 02 13:02:52 IST 2026
 comment0.target=ViewabilityUtil
 comment0.text=\r\n Decides whether a file type is something a browser can actually render\r\n inline (image, pdf, audio, video, or text) versus something it would just\r\n dump as raw bytes (docx, xlsx, zip, exe, etc.).\r\n\r\n Images/PDF/audio/video are decided purely by extension - sniffing\r\n wouldn't help identify a binary format anyway. Text is different\: rather\r\n than requiring every possible text-based extension to be hardcoded here,\r\n unrecognized extensions fall back to TextSniffer reading the actual file\r\n content - so a custom format (like a homegrown .vcanvas) still gets full\r\n viewer support without needing code changes for every possible extension.\r\n
 comment1.params=file extLowercase

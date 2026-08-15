@@ -1,5 +1,5 @@
 #BlueJ class context
-#Sun Aug 02 08:07:34 IST 2026
+#Sun Aug 02 13:02:52 IST 2026
 comment0.target=ShellScript
-comment0.text=\r\n Tab manager for the app shell (the "/" page). Each tab is one iframe\r\n pointed at a content route (/dashboard, /browse?path\=..., /search?...).\r\n Tab labels are picked up automatically from each iframe's <title> after\r\n it loads - so navigating inside a tab (e.g. clicking into a subfolder)\r\n updates that tab's name on its own, no extra plumbing needed on the\r\n content-page side.\r\n\r\n Open tabs are remembered in sessionStorage so a shell page reload doesn't\r\n lose them (but a fresh browser session starts clean, which feels right\r\n for "windows/tabs" rather than permanent bookmarks).\r\n
+comment0.text=\r\n Tab manager for the app shell (the "/" page). Each tab is one iframe\r\n pointed at a content route (/dashboard, /browse?path\=..., /search?...).\r\n Tab labels are picked up automatically from each iframe's <title> after\r\n it loads - so navigating inside a tab (e.g. clicking into a subfolder)\r\n updates that tab's name on its own, no extra plumbing needed on the\r\n content-page side.\r\n\r\n Open tabs are remembered in localStorage so a page reload (or even\r\n closing and reopening the browser) doesn't lose them.\r\n
 numComments=1

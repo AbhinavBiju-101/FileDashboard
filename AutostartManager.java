@@ -73,12 +73,27 @@ public class AutostartManager {
         }
     }
 
-    private static String findJavaw() throws IOException, InterruptedException {
-        Process p = new ProcessBuilder("where", "javaw").start();
-        String output = readAll(p).trim();
-        p.waitFor();
-        if (output.isEmpty()) return null;
-        return output.split("\\r?\\n")[0].trim();
+    // Tries java.home first - the actual install directory of the JVM that's
+    // CURRENTLY RUNNING this code, which is correct regardless of PATH. This
+    // matters because a jar can be launched via file association (double-click)
+    // without java's bin folder ever being on PATH at all, even though Java
+    // obviously works (we're running inside it). Falls back to a PATH search
+    // only if that somehow doesn't pan out.
+    private static String findJavaw() {
+        String javaHome = System.getProperty("java.home");
+        if (javaHome != null) {
+            File candidate = new File(javaHome, "bin" + File.separator + "javaw.exe");
+            if (candidate.exists()) return candidate.getAbsolutePath();
+        }
+        try {
+            Process p = new ProcessBuilder("where", "javaw").start();
+            String output = readAll(p).trim();
+            p.waitFor();
+            if (!output.isEmpty()) return output.split("\\r?\\n")[0].trim();
+        } catch (Exception ignored) {
+            // fall through to null
+        }
+        return null;
     }
 
     // Finds the path of the currently-running jar via the classloader's own

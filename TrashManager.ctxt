@@ -1,5 +1,5 @@
 #BlueJ class context
-#Sun Aug 02 08:07:34 IST 2026
+#Sun Aug 02 13:02:52 IST 2026
 comment0.target=TrashManager
 comment0.text=\r\n Recycle bin\: "deleting" a file/folder actually moves it into\r\n Config.TRASH_DIR (a hidden folder inside ROOT_DIR) and records where it\r\n came from, so it can be restored later. Nothing is permanently removed\r\n until the person explicitly empties the trash or deletes a single item\r\n from it. Manifest is persisted as JSON so trash survives a restart, same\r\n approach as RecentActivity.\r\n
 comment1.params=target relPath
