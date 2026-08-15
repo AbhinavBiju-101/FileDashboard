@@ -42,6 +42,7 @@ public class GDriveClient {
         public String mimeType;
         public long size; // 0 for folders and native Google Docs (Drive doesn't report a byte size for either)
         public String webViewLink;
+        public String thumbnailLink;
     }
 
     // Lists the direct children of folderId, folders first then files, each
@@ -54,7 +55,7 @@ public class GDriveClient {
         String q = "'" + folderId.replace("'", "\\'") + "' in parents and trashed = false";
         String url = "https://www.googleapis.com/drive/v3/files"
             + "?q=" + urlEncode(q)
-            + "&fields=" + urlEncode("files(id,name,mimeType,size,webViewLink)")
+            + "&fields=" + urlEncode("files(id,name,mimeType,size,webViewLink,thumbnailLink)")
             + "&orderBy=" + urlEncode("folder,name")
             + "&pageSize=200"
             + "&spaces=drive";
@@ -70,6 +71,7 @@ public class GDriveClient {
                 item.name = str(m.get("name"));
                 item.mimeType = str(m.get("mimeType"));
                 item.webViewLink = str(m.get("webViewLink"));
+                item.thumbnailLink = str(m.get("thumbnailLink"));
                 String sizeStr = str(m.get("size"));
                 try { item.size = sizeStr == null ? 0 : Long.parseLong(sizeStr); } catch (NumberFormatException ignored) {}
                 out.add(item);
@@ -88,13 +90,14 @@ public class GDriveClient {
     public static DriveItem getMetadata(String fileId) throws IOException {
         String token = GDriveAuth.getValidAccessToken();
         String url = "https://www.googleapis.com/drive/v3/files/" + urlEncode(fileId)
-            + "?fields=" + urlEncode("id,name,mimeType,size,webViewLink");
+            + "?fields=" + urlEncode("id,name,mimeType,size,webViewLink,thumbnailLink");
         Map<String, Object> m = GDriveAuth.getJson(url, token);
         DriveItem item = new DriveItem();
         item.id = str(m.get("id"));
         item.name = str(m.get("name"));
         item.mimeType = str(m.get("mimeType"));
         item.webViewLink = str(m.get("webViewLink"));
+        item.thumbnailLink = str(m.get("thumbnailLink"));
         String sizeStr = str(m.get("size"));
         try { item.size = sizeStr == null ? 0 : Long.parseLong(sizeStr); } catch (NumberFormatException ignored) {}
         return item;
@@ -140,7 +143,7 @@ public class GDriveClient {
         String q = "name contains '" + escaped + "' and trashed = false";
         String url = "https://www.googleapis.com/drive/v3/files"
             + "?q=" + urlEncode(q)
-            + "&fields=" + urlEncode("files(id,name,mimeType,size,webViewLink)")
+            + "&fields=" + urlEncode("files(id,name,mimeType,size,webViewLink,thumbnailLink)")
             + "&orderBy=" + urlEncode("folder,name")
             + "&pageSize=50"
             + "&spaces=drive";
@@ -156,6 +159,7 @@ public class GDriveClient {
                 item.name = str(m.get("name"));
                 item.mimeType = str(m.get("mimeType"));
                 item.webViewLink = str(m.get("webViewLink"));
+                item.thumbnailLink = str(m.get("thumbnailLink"));
                 String sizeStr = str(m.get("size"));
                 try { item.size = sizeStr == null ? 0 : Long.parseLong(sizeStr); } catch (NumberFormatException ignored) {}
                 out.add(item);

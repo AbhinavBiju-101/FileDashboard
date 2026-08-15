@@ -8,11 +8,16 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Serves "/gdrive-file?id=...&name=...&mime=..." - streams a Drive file's
- * raw bytes back through this server (rather than sending the browser
- * straight to Google) so it behaves like any other download link in the
- * app: a normal same-origin URL with a sensible filename, no separate
+ * Serves "/gdrive-file?id=...&name=...&mime=...&mode=..." - streams a
+ * Drive file's raw bytes back through this server (rather than sending the
+ * browser straight to Google) so it behaves like any other download link in
+ * the app: a normal same-origin URL with a sensible filename, no separate
  * Google sign-in prompt in the browser tab itself.
+ *
+ * mode=view sends Content-Disposition: inline (for the preview modal and
+ * /gdrive-viewer - an <img>/<iframe>/fetch() embedding the bytes directly
+ * rather than triggering a save-file prompt). Any other value (or omitted)
+ * sends "attachment", same as local's /file?mode=download.
  *
  * name/mime are only display hints carried over from the listing that
  * generated the link (see GDriveBrowseHandler.java) - the actual streamed
@@ -25,6 +30,7 @@ public class GDriveDownloadHandler implements HttpHandler {
     public void handle(HttpExchange exchange) throws IOException {
         String query = exchange.getRequestURI().getRawQuery();
         String id = QueryUtil.getParam(query, "id");
+        String mode = QueryUtil.getParam(query, "mode"); // "view" = inline (viewer/preview), default = attachment (Download)
         if (id != null) {
             try { id = URLDecoder.decode(id, "UTF-8"); } catch (Exception ignored) {}
         }
@@ -70,8 +76,9 @@ public class GDriveDownloadHandler implements HttpHandler {
         byte[] bytes = buffer.toByteArray();
 
         exchange.getResponseHeaders().set("Content-Type", mime);
+        String disposition = "view".equals(mode) ? "inline" : "attachment";
         exchange.getResponseHeaders().set("Content-Disposition",
-            "attachment; filename=\"" + fileName.replace("\"", "'") + "\"");
+            disposition + "; filename=\"" + fileName.replace("\"", "'") + "\"");
         exchange.sendResponseHeaders(200, bytes.length);
         try (OutputStream os = exchange.getResponseBody()) {
             os.write(bytes);

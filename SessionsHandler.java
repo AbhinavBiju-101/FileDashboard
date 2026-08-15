@@ -77,6 +77,7 @@ public class SessionsHandler implements HttpHandler {
         // before it's ever actually been opened once - see the synthesized
         // placeholder in renderSessions() below.
         "var GDRIVE_SESSION_ID='session-gdrive';" +
+        "var DRIVE_ICON_SRC='" + DriveIcon.DATA_URI + "';" +
 
         "function fdFormatDate(ts){" +
           "var d=new Date(ts);" +
@@ -144,7 +145,7 @@ public class SessionsHandler implements HttpHandler {
             "var badge=isMine?\"<span class='session-badge session-badge-current'>This tab</span>\":" +
               "(active?\"<span class='session-badge session-badge-active'>Open in another tab</span>\":'');" +
             "var unsavedBadge=(!pinned && !s.named)?\"<span class='session-badge session-badge-unsaved' title='Not named - it may get cleaned up automatically, and you will not be warned before losing it'>Unsaved</span>\":'';" +
-            "var icon=pinned?\"<span class='session-icon' title='Google Drive'>&#9729;</span>\":'';" +
+            "var icon=pinned?\"<img class='session-icon' src='\"+DRIVE_ICON_SRC+\"' width='16' height='16' alt='Google Drive' title='Google Drive'>\":'';" +
             "var tabCount=(s.tabs||[]).length;" +
             "var name=escapeHtml(s.name||(pinned?'Google Drive':'Unnamed session'));" +
             "var locked=(isMine||active);" +

@@ -175,6 +175,7 @@ public class ShellScript {
               // rather than leaving a stale leftover entry behind.
               "if(existing){ delete sessions[shellSessionId]; shellSaveSessionsMap(sessions); }" +
               "shellUpdateUnsavedBadge();" +
+              "shellUpdateSessionSwitcher();" +
               "return;" +
             "}" +
             "sessions[shellSessionId]={" +
@@ -189,6 +190,7 @@ public class ShellScript {
             "};" +
             "shellSaveSessionsMap(sessions);" +
             "shellUpdateUnsavedBadge();" +
+            "shellUpdateSessionSwitcher();" +
           "}catch(e){}" +
         "}" +
 
@@ -213,6 +215,100 @@ public class ShellScript {
         // the LIVE in-memory tabs/groups if none has ever been persisted
         // yet (see shellSaveState()'s skip-saving branch above) rather
         // than writing a bare stub with no tabs into storage.
+        // ---- Bottom-of-sidebar session switcher (see SidebarRenderer.java) ----
+        // Reuses shellLoadSession(id, true)'s existing "close & open here"
+        // logic exactly - picking a session that's open in another browser
+        // tab just force-closes it there and loads it here, same as the
+        // Sessions page's own "Close & open here" button, after a matching
+        // confirm() (see SessionsHandler.java's own copy of this same
+        // confirm text - kept identical so it reads as one consistent
+        // feature, not two different ones that happen to do the same
+        // thing).
+        "function shellSessionDisplayName(){" +
+          "if(shellSessionId===GDRIVE_SESSION_ID) return 'Google Drive';" +
+          "var existing=shellLoadSessionsMap()[shellSessionId];" +
+          "return (existing&&existing.name)||'Unnamed session';" +
+        "}" +
+        "function shellUpdateSessionSwitcher(){" +
+          "var dot=document.getElementById('sidebarSessionDot');" +
+          "var nameEl=document.getElementById('sidebarSessionName');" +
+          "if(!dot||!nameEl) return;" +
+          "nameEl.textContent=shellSessionDisplayName();" +
+          "var existing=shellLoadSessionsMap()[shellSessionId];" +
+          "var isNamed=(shellSessionId===GDRIVE_SESSION_ID)||!!(existing&&existing.named);" +
+          "dot.className='sidebar-session-dot'+(shellSessionId===GDRIVE_SESSION_ID?' drive':(!isNamed?' unsaved':''));" +
+        "}" +
+        "function shellToggleSessionMenu(e){" +
+          "e.stopPropagation();" +
+          "var menu=document.getElementById('sidebarSessionMenu');" +
+          "if(menu.classList.contains('open')){ shellCloseSessionMenu(); return; }" +
+          "shellRenderSessionMenu();" +
+          "var btn=document.getElementById('sidebarSessionSwitcher');" +
+          "var rect=btn.getBoundingClientRect();" +
+          "menu.style.left=Math.max(8,rect.left)+'px';" +
+          "menu.style.bottom=(window.innerHeight-rect.top)+'px';" +
+          "menu.style.top='';" +
+          "menu.classList.add('open');" +
+          "setTimeout(function(){ document.addEventListener('click', shellSessionMenuOutsideClick); }, 0);" +
+        "}" +
+        "function shellCloseSessionMenu(){" +
+          "var menu=document.getElementById('sidebarSessionMenu');" +
+          "if(menu) menu.classList.remove('open');" +
+          "document.removeEventListener('click', shellSessionMenuOutsideClick);" +
+        "}" +
+        "function shellSessionMenuOutsideClick(e){" +
+          "var menu=document.getElementById('sidebarSessionMenu');" +
+          "if(menu && !menu.contains(e.target) && !e.target.closest('#sidebarSessionSwitcher')){ shellCloseSessionMenu(); }" +
+        "}" +
+        "function shellRenderSessionMenu(){" +
+          "var menu=document.getElementById('sidebarSessionMenu');" +
+          "var sessions=Object.assign({}, shellLoadSessionsMap());" +
+          "if(!sessions[GDRIVE_SESSION_ID]){ sessions[GDRIVE_SESSION_ID]={id:GDRIVE_SESSION_ID,name:'Google Drive',tabs:[],groups:[],createdAt:0,updatedAt:0}; }" +
+          "if(!sessions[shellSessionId]){ sessions[shellSessionId]={id:shellSessionId,name:'',tabs:shellTabs,groups:shellGroups,createdAt:0,updatedAt:0}; }" +
+          "var ids=Object.keys(sessions);" +
+          "ids.sort(function(a,b){" +
+            "if(a===GDRIVE_SESSION_ID) return -1;" +
+            "if(b===GDRIVE_SESSION_ID) return 1;" +
+            "if(a===shellSessionId) return -1;" +
+            "if(b===shellSessionId) return 1;" +
+            "return (sessions[b].updatedAt||0)-(sessions[a].updatedAt||0);" +
+          "});" +
+          "var rows=ids.map(function(id){" +
+            "var s=sessions[id];" +
+            "var isMine=(id===shellSessionId);" +
+            "var activeElsewhere=!isMine && shellIsSessionActive(id);" +
+            "var name=shellEscapeHtml(s.name||'Unnamed session');" +
+            "var badges='';" +
+            "if(activeElsewhere){ badges+=\"<span class='sidebar-session-menu-badge elsewhere'>Open elsewhere</span>\"; }" +
+            "if(id!==GDRIVE_SESSION_ID && !s.named){ badges+=\"<span class='sidebar-session-menu-badge unsaved'>Unsaved</span>\"; }" +
+            "var tabCount=(s.tabs||[]).length;" +
+            "return \"<div class='sidebar-session-menu-item\"+(isMine?' current':'')+\"' data-session-id='\"+id+\"' title='\"+tabCount+\" tab\"+(tabCount===1?'':'s')+(isMine?' - this tab':'')+\"'>\" +" +
+              "\"<span class='sidebar-session-menu-name'>\"+name+(isMine?' (this tab)':'')+\"</span>\"+badges+" +
+            "\"</div>\";" +
+          "}).join('');" +
+          "rows+=\"<div class='sidebar-session-menu-divider'></div>\";" +
+          "rows+=\"<div class='sidebar-session-menu-item sidebar-session-menu-action' data-session-action='new'>+ New session</div>\";" +
+          "rows+=\"<div class='sidebar-session-menu-item sidebar-session-menu-action' data-session-action='manage'>Manage sessions...</div>\";" +
+          "menu.innerHTML=rows;" +
+        "}" +
+        "document.addEventListener('click', function(e){" +
+          "var actionItem=e.target.closest('[data-session-action]');" +
+          "if(actionItem){" +
+            "shellCloseSessionMenu();" +
+            "if(actionItem.dataset.sessionAction==='new'){ shellHandleForcedClose(); }" +
+            "else if(actionItem.dataset.sessionAction==='manage'){ navigateCurrentTab('/sessions'); }" +
+            "return;" +
+          "}" +
+          "var row=e.target.closest('.sidebar-session-menu-item[data-session-id]');" +
+          "if(!row || row.classList.contains('current')) return;" +
+          "var id=row.dataset.sessionId;" +
+          "shellCloseSessionMenu();" +
+          "if(shellIsSessionActive(id)){" +
+            "if(!confirm('This session is open in another browser tab. Close it there and open it here?')) return;" +
+          "}" +
+          "shellLoadSession(id, true);" +
+        "});" +
+
         "function shellRenameCurrentSession(){" +
           "var sessions=shellLoadSessionsMap();" +
           "var existing=sessions[shellSessionId];" +
@@ -230,6 +326,7 @@ public class ShellScript {
           "sessions[shellSessionId]=toSave;" +
           "shellSaveSessionsMap(sessions);" +
           "shellUpdateUnsavedBadge();" +
+          "shellUpdateSessionSwitcher();" +
         "}" +
 
         // Best-effort warning on an actual browser tab/window close (or
@@ -365,6 +462,7 @@ public class ShellScript {
         "function shellApplyDriveSidebar(isDrive){" +
           "var sb=document.getElementById('sidebar');" +
           "if(sb){ sb.classList.toggle('drive-mode', !!isDrive); }" +
+          "shellUpdateSessionSwitcher();" +
         "}" +
 
         // The other end of "Close & open here": some other browser tab has
@@ -1033,7 +1131,7 @@ public class ShellScript {
         // section for why this doesn't try to build a multi-level path.
         "function goToDriveAddressItem(id, name){" +
           "closeAddressBar();" +
-          "navigateCurrentTab('/gdrive?path='+encodeURIComponent(id)+'|'+encodeURIComponent(name));" +
+          "navigateCurrentTab('/gdrive?path='+encodeURIComponent(id)+'%7C'+encodeURIComponent(name));" +
         "}" +
 
         // Splits the current input into "the folder we're listing" (up to

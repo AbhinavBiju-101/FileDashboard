@@ -292,7 +292,10 @@ public class ViewerHandler implements HttpHandler {
         return parentRel.isEmpty() ? name : parentRel + "/" + name;
     }
 
-    private String viewerStyles() {
+    // Shared by GDriveViewerHandler.java too, so Drive files viewed via
+    // /gdrive-viewer get the exact same reading-view chrome as local files
+    // do here, rather than a look-alike duplicate stylesheet.
+    static String viewerStyles() {
         return "<style>" +
             "*{box-sizing:border-box;}" +
             "body.viewer-body{margin:0;height:100vh;display:flex;flex-direction:column;background:#fff;" +

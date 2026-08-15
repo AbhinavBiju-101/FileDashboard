@@ -66,7 +66,7 @@ public class Styles {
         ".session-btn-danger:hover{background:#fdecea;border-color:#f3b4ae;color:#c00;}" +
         ".session-btn-warning{background:#fff8e6;border-color:#f0d99a;color:#8a5a00;}" +
         ".session-btn-warning:hover{background:#fdf0cc;}" +
-        ".session-icon{font-size:13px;}" +
+        ".session-icon{vertical-align:middle;}" +
         ".session-btn:disabled{opacity:.45;cursor:not-allowed;}" +
         ".session-btn:disabled:hover{background:#f4f5f7;color:#333;}" +
         ".session-btn-primary:disabled:hover{background:#2563eb;color:#fff;}" +
@@ -100,6 +100,35 @@ public class Styles {
         ".sidebar-item:hover{background:#2d333b;color:#fff;}" +
         ".sidebar-icon{font-size:17px;width:20px;text-align:center;flex-shrink:0;}" +
         ".sidebar-divider{height:1px;background:#333;margin:8px 16px;}" +
+        // The session switcher pinned to the bottom of the sidebar (see
+        // SidebarRenderer.render()/ShellScript.java's shellToggleSessionMenu()).
+        ".sidebar-session-switcher{display:flex;align-items:center;gap:10px;padding:10px 16px;" +
+            "border-top:1px solid #333;color:#d1d5db;cursor:pointer;flex-shrink:0;}" +
+        ".sidebar-session-switcher:hover{background:#2d333b;color:#fff;}" +
+        ".sidebar-session-dot{width:8px;height:8px;border-radius:50%;background:#3b82f6;flex-shrink:0;}" +
+        ".sidebar-session-dot.drive{background:#0ea54c;}" +
+        ".sidebar-session-dot.unsaved{background:#d97706;}" +
+        ".sidebar-session-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;}" +
+        ".sidebar-session-chevron{font-size:10px;color:#9ca3af;flex-shrink:0;}" +
+        ".sidebar.collapsed .sidebar-session-switcher{padding:10px 0;justify-content:center;}" +
+        // The popover itself is position:fixed (not nested under the
+        // sidebar) so it's never clipped by .sidebar's own overflow-y:auto -
+        // its position is computed and set in JS right before opening.
+        ".sidebar-session-menu{display:none;position:fixed;z-index:2000;background:#fff;border:1px solid #d5d8dc;" +
+            "border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);min-width:240px;max-width:320px;" +
+            "max-height:60vh;overflow-y:auto;padding:6px;}" +
+        ".sidebar-session-menu.open{display:block;}" +
+        ".sidebar-session-menu-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;" +
+            "cursor:pointer;font-size:13px;color:#222;}" +
+        ".sidebar-session-menu-item:hover{background:#f0f5ff;}" +
+        ".sidebar-session-menu-item.current{background:#f0f5ff;cursor:default;}" +
+        ".sidebar-session-menu-item.current:hover{background:#f0f5ff;}" +
+        ".sidebar-session-menu-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}" +
+        ".sidebar-session-menu-badge{font-size:10px;font-weight:600;padding:1px 6px;border-radius:99px;flex-shrink:0;}" +
+        ".sidebar-session-menu-badge.elsewhere{background:#fff1e6;color:#b5590a;}" +
+        ".sidebar-session-menu-badge.unsaved{background:#fff3d6;color:#8a5a00;}" +
+        ".sidebar-session-menu-divider{height:1px;background:#eee;margin:6px 4px;}" +
+        ".sidebar-session-menu-action{color:#2563eb;font-weight:500;}" +
         ".sidebar:not(.drive-mode) .sidebar-mode-drive{display:none;}" +
         ".sidebar.drive-mode .sidebar-mode-local{display:none;}" +
         ".main-content{margin-left:190px;transition:margin-left .15s;}" +

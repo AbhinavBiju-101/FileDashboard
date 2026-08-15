@@ -163,7 +163,7 @@ public class SettingsHandler implements HttpHandler {
         // OAuth client-type requirement without actually reducing the
         // Google Cloud Console setup work, which is the same either way).
         sb.append("<div class='settings-section'>");
-        sb.append("<h2>Google Drive</h2>");
+        sb.append("<h2>").append(DriveIcon.img(22)).append(" Google Drive</h2>");
         sb.append("<p class='settings-desc'>Connect a Google account to browse its Drive files through the same card-grid UI as your local ")
           .append("files, from its own pinned session in the <a href=\"/sessions\" onclick=\"if(parent&&parent.navigateCurrentTab){ parent.navigateCurrentTab('/sessions'); return false; }\">Session Manager</a>. ")
           .append("Read-only for now - browsing and downloading, no uploads/renames/deletes yet.</p>");
@@ -222,7 +222,7 @@ public class SettingsHandler implements HttpHandler {
                 // to close the popup by hand.
                 sb.append("<p class='settings-hint'><a class='settings-connect-link' href='/gauth/start' onclick=\"")
                   .append("window.open('/gauth/start','gdriveConnect','width=520,height=680,menubar=no,toolbar=no,location=yes,status=no,resizable=yes,scrollbars=yes');")
-                  .append("return false;\">Connect Google Drive \u2192</a></p>");
+                  .append("return false;\">").append(DriveIcon.img(16)).append(" Connect Google Drive \u2192</a></p>");
             }
         }
         sb.append("</div>");

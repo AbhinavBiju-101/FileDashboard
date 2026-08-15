@@ -80,6 +80,7 @@ public class FileServer {
         addContext(server, "/gdrive-file", new GDriveDownloadHandler());
         addContext(server, "/gdrive-search", new GDriveSearchHandler());
         addContext(server, "/gdrive-suggest", new GDriveSuggestHandler());
+        addContext(server, "/gdrive-viewer", new GDriveViewerHandler());
         addContext(server, "/viewer", new ViewerHandler());
         addContext(server, "/save-text", new SaveTextHandler());
         addContext(server, "/reveal", new RevealHandler());
