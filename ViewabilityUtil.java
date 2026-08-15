@@ -26,6 +26,11 @@ public class ViewabilityUtil {
     private static final Set<String> VIDEO_EXTS = new HashSet<>(Arrays.asList(
         "mp4", "webm", "mov", "m4v"));
 
+    // Rendered via mammoth.js client-side (see PageScripts.DOCX_RESOURCES) -
+    // not text-like (isTextLike stays false for these; there's no plain-text
+    // representation worth editing), just its own viewable category.
+    private static final Set<String> DOCX_EXTS = new HashSet<>(Arrays.asList("docx"));
+
     // Extensions known to be text without needing to sniff - a fast path,
     // not an exhaustive requirement (see isTextLike below).
     private static final Set<String> KNOWN_TEXT_EXTS = new HashSet<>(Arrays.asList(
@@ -38,6 +43,7 @@ public class ViewabilityUtil {
             || extLowercase.equals("pdf")
             || AUDIO_EXTS.contains(extLowercase)
             || VIDEO_EXTS.contains(extLowercase)
+            || DOCX_EXTS.contains(extLowercase)
             || isTextLike(file, extLowercase);
     }
 
@@ -47,7 +53,8 @@ public class ViewabilityUtil {
         if (KNOWN_TEXT_EXTS.contains(extLowercase)) return true;
         // Don't bother sniffing formats we already know are binary.
         if (IMAGE_EXTS.contains(extLowercase) || AUDIO_EXTS.contains(extLowercase)
-            || VIDEO_EXTS.contains(extLowercase) || extLowercase.equals("pdf")) {
+            || VIDEO_EXTS.contains(extLowercase) || DOCX_EXTS.contains(extLowercase)
+            || extLowercase.equals("pdf")) {
             return false;
         }
         return file != null && file.isFile() && TextSniffer.looksLikeText(file);

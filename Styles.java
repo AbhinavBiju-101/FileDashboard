@@ -93,6 +93,33 @@ public class Styles {
         ".preview-body iframe{width:100%;height:80vh;border:none;}" +
         ".preview-body pre{white-space:pre-wrap;word-break:break-word;padding:20px;text-align:left;width:100%;box-sizing:border-box;font-family:Menlo,Consolas,monospace;font-size:13px;margin:0;}" +
         ".preview-nopreview{padding:60px 30px;text-align:center;color:#666;}" +
+        // Visible edge arrow buttons - the same navigation the ArrowLeft/
+        // ArrowRight keys already drive (see navigatePreview in
+        // PageScripts), just reachable with a click/tap too. Positioned at
+        // the screen edges (fixed, not relative to preview-box) so they sit
+        // clear of the box itself on anything wider than a phone; z-index
+        // above the box in case a narrow viewport overlaps them.
+        ".preview-nav-btn{position:fixed;top:50%;transform:translateY(-50%);width:44px;height:44px;" +
+          "border-radius:50%;background:rgba(0,0,0,.35);color:#fff;border:none;font-size:18px;" +
+          "cursor:pointer;z-index:1100;display:flex;align-items:center;justify-content:center;" +
+          "transition:background .15s;}" +
+        ".preview-nav-btn:hover{background:rgba(0,0,0,.6);}" +
+        ".preview-nav-left{left:20px;}" +
+        ".preview-nav-right{right:20px;}" +
+        // .docx preview - rendered by mammoth.js into plain HTML with no
+        // styling of its own, so it needs a readable typographic treatment
+        // here (loosely matching the Viewer's .viewer-reading style).
+        ".docx-loading{padding:60px;color:#888;}" +
+        ".docx-preview{max-width:760px;width:100%;margin:0 auto;padding:32px 40px;font-size:15px;" +
+          "line-height:1.7;color:#1f2328;text-align:left;box-sizing:border-box;}" +
+        ".docx-preview h1{font-size:1.7em;margin:1em 0 .5em;}" +
+        ".docx-preview h2{font-size:1.35em;margin:1em 0 .5em;}" +
+        ".docx-preview h3{font-size:1.1em;margin:1em 0 .4em;}" +
+        ".docx-preview p{margin:0 0 1em;}" +
+        ".docx-preview table{border-collapse:collapse;margin:1em 0;}" +
+        ".docx-preview td,.docx-preview th{border:1px solid #d5d8dc;padding:6px 10px;}" +
+        ".docx-preview img{max-width:100%;height:auto;}" +
+        ".docx-preview ul,.docx-preview ol{padding-left:24px;margin:0 0 1em;}" +
         // Shell (tab bar + iframe layout)
         ".shell-main{display:flex;flex-direction:column;height:100vh;box-sizing:border-box;}" +
         ".page-content{margin:0;}" +

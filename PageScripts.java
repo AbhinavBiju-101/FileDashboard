@@ -12,9 +12,21 @@ public class PageScripts {
         "<link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css'>" +
         "<script src='https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js'></script>";
 
+    // mammoth.js's browser build converts .docx bytes to HTML entirely
+    // client-side (no server-side library, no build tool - consistent with
+    // the rest of this app). Loaded unconditionally alongside the code
+    // highlighter above, same trade-off: a small always-present CDN
+    // include rather than trying to load it only when a docx is actually
+    // opened.
+    public static final String DOCX_RESOURCES =
+        "<script src='https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js'></script>";
+
     public static final String MODAL_HTML =
         CODE_HIGHLIGHT_RESOURCES +
+        DOCX_RESOURCES +
         "<div id='previewOverlay' class='preview-overlay' onclick=\"if(event.target===this) closePreview();\">" +
+        "<button id='previewNavLeft' class='preview-nav-btn preview-nav-left' onclick='navigatePreview(-1)' aria-label='Previous file'>&#10094;</button>" +
+        "<button id='previewNavRight' class='preview-nav-btn preview-nav-right' onclick='navigatePreview(1)' aria-label='Next file'>&#10095;</button>" +
         "<div class='preview-box'>" +
         "<div class='preview-header'>" +
         "<span id='previewTitle' class='preview-title'></span>" +
@@ -75,6 +87,7 @@ public class PageScripts {
             "('/file?path='+encodeURIComponent(path)+'&mode=download');" +
           "document.getElementById('previewDownloadLink').href=downloadUrl;" +
           "document.getElementById('previewExtraAction').innerHTML='';" +
+          "updatePreviewNavVisibility();" +
           // Same file types the right-click "Open Viewer" menu item offers
           // (pdf, or anything text-like) - the viewer's dedicated reading
           // mode only really has something extra to offer for those.
@@ -102,6 +115,23 @@ public class PageScripts {
             "body.innerHTML='<audio controls autoplay src=\"'+fileUrl+'\"></audio>';" +
           "}else if(PREVIEW_VIDEO_EXTS.indexOf(ext)!==-1){" +
             "body.innerHTML='<video controls autoplay src=\"'+fileUrl+'\"></video>';" +
+          "}else if(ext==='docx'){" +
+            // Rendered entirely client-side via mammoth.js (loaded
+            // unconditionally - see DOCX_RESOURCES). If that fails for any
+            // reason (corrupt file, an unsupported .docx feature, or the
+            // CDN script not loading), fall back to the same "no preview,
+            // just download it" message every other non-viewable type
+            // already shows, rather than a dead loading spinner.
+            "body.innerHTML='<div class=\"docx-loading\">Loading document...</div>';" +
+            "fetch(fileUrl).then(function(r){return r.arrayBuffer();}).then(function(buf){" +
+              "if(!window.mammoth) throw new Error('renderer unavailable');" +
+              "return mammoth.convertToHtml({arrayBuffer:buf});" +
+            "}).then(function(result){" +
+              "body.innerHTML='<div class=\"docx-preview\">'+result.value+'</div>';" +
+            "}).catch(function(){" +
+              "body.innerHTML='<div class=\"preview-nopreview\"><p>Couldn\\'t render a preview for this document.</p>" +
+                "<p><a href=\"'+downloadUrl+'\" class=\"preview-download\">Download instead</a></p></div>';" +
+            "});" +
           "}else{" +
             "body.innerHTML='<pre>Loading...</pre>';" +
             "fetch(fileUrl).then(function(r){return r.text();}).then(function(text){" +
@@ -176,7 +206,20 @@ public class PageScripts {
         "}" +
         "function isViewableExt(ext){" +
           "return PREVIEW_IMAGE_EXTS.indexOf(ext)!==-1||PREVIEW_AUDIO_EXTS.indexOf(ext)!==-1||" +
-            "PREVIEW_VIDEO_EXTS.indexOf(ext)!==-1||PREVIEW_TEXT_EXTS.indexOf(ext)!==-1||ext==='pdf';" +
+            "PREVIEW_VIDEO_EXTS.indexOf(ext)!==-1||PREVIEW_TEXT_EXTS.indexOf(ext)!==-1||ext==='pdf'||ext==='docx';" +
+        "}" +
+        // Shared by the visible edge arrow buttons and the ArrowLeft/
+        // ArrowRight keydown handler below - both just call
+        // navigatePreview(direction), so clicking an arrow and pressing a
+        // key behave identically.
+        "function updatePreviewNavVisibility(){" +
+          "var inTrash=!!currentPreviewTrashId;" +
+          "var cards=Array.prototype.slice.call(document.querySelectorAll('.card.file[data-path]'))" +
+            ".filter(function(c){ return c.style.display!=='none' && (inTrash?c.dataset.type==='trash':c.dataset.type!=='trash'); });" +
+          "var show=cards.length>1;" +
+          "var left=document.getElementById('previewNavLeft'), right=document.getElementById('previewNavRight');" +
+          "if(left) left.style.display=show?'':'none';" +
+          "if(right) right.style.display=show?'':'none';" +
         "}" +
         // Left/Right arrow keys step to the previous/next file card while a
         // preview is open, wrapping around at either end - lets someone

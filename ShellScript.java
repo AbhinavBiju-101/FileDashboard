@@ -163,15 +163,74 @@ public class ShellScript {
         "function shellCloseTab(id){" +
           "var idx=shellTabs.findIndex(function(t){ return t.id===id; });" +
           "if(idx===-1) return;" +
+          "var closedTab=shellTabs[idx];" +
+          // Remember enough to fully restore it: url, title, and its
+          // original position (so "undo" puts it back where it was, not
+          // just tacked onto the end). Capped like the undo/redo stack in
+          // PageScripts.js, same reasoning - unbounded history for
+          // something this cheap to re-derive isn't worth keeping around.
+          "shellClosedTabsStack.push({url:closedTab.url, title:closedTab.title, index:idx});" +
+          "if(shellClosedTabsStack.length>SHELL_MAX_CLOSED_TABS) shellClosedTabsStack.shift();" +
           "shellTabs.splice(idx,1);" +
           "var btn=document.getElementById(id); if(btn) btn.remove();" +
           "var frame=document.getElementById(id+'-frame'); if(frame) frame.remove();" +
+          "shellShowReopenToast(closedTab.title);" +
 
           "if(shellTabs.length===0){ openTab('/dashboard','Dashboard'); return; }" +
           "if(shellActiveTabId===id){" +
             "var next=shellTabs[Math.max(0, idx-1)];" +
             "shellSetActiveTab(next.id);" +
           "}" +
+          "shellSaveState();" +
+        "}" +
+
+        // ---- Undo tab close: a "Closed 'X' · Reopen" toast (same look as
+        // the file-ops undo toast in PageScripts.js, but this shell page
+        // doesn't load PageScripts.js - see the tab-context-menu comment
+        // below for why - so it gets its own small copy), plus the
+        // standard browser shortcut Ctrl/Cmd+Shift+T. Reopening restores
+        // the tab to its original position in the bar, not just at the
+        // end, and repeated Ctrl+Shift+T walks back through however many
+        // tabs were closed, most-recent-first - same LIFO behavior as a
+        // real browser's "reopen closed tab". ----
+        "var shellClosedTabsStack=[];" +
+        "var SHELL_MAX_CLOSED_TABS=10;" +
+        "var shellReopenToastTimer=null;" +
+        "function shellShowReopenToast(title){" +
+          "var toast=document.getElementById('shellReopenToast');" +
+          "if(!toast) return;" +
+          "document.getElementById('shellReopenToastMsg').textContent='Closed \"'+title+'\"';" +
+          "toast.classList.add('open');" +
+          "clearTimeout(shellReopenToastTimer);" +
+          "shellReopenToastTimer=setTimeout(hideReopenToast, 6000);" +
+        "}" +
+        "function hideReopenToast(){" +
+          "var toast=document.getElementById('shellReopenToast');" +
+          "if(toast) toast.classList.remove('open');" +
+          "clearTimeout(shellReopenToastTimer);" +
+        "}" +
+        // Moves each tab button to match shellTabs' current order -
+        // insertBefore on an already-attached node relocates it rather
+        // than duplicating it, so this is just "lay them out in array
+        // order" reused from the drag-reorder path (shellSyncTabOrderFromDom
+        // does the reverse: DOM order -> array; this goes array -> DOM).
+        "function shellReorderDomFromTabs(){" +
+          "var tabbar=document.getElementById('tabbar');" +
+          "var newTabBtn=document.getElementById('newTabBtn');" +
+          "shellTabs.forEach(function(t){" +
+            "var el=document.getElementById(t.id);" +
+            "if(el) tabbar.insertBefore(el, newTabBtn);" +
+          "});" +
+        "}" +
+        "function shellReopenClosedTab(){" +
+          "if(!shellClosedTabsStack.length) return;" +
+          "var closed=shellClosedTabsStack.pop();" +
+          "var id='tab-'+(++shellTabCounter);" +
+          "var insertAt=Math.min(closed.index, shellTabs.length);" +
+          "shellTabs.splice(insertAt, 0, {id:id, url:closed.url, title:closed.title});" +
+          "shellCreateTabElement(id, closed.url, closed.title);" +
+          "shellReorderDomFromTabs();" +
+          "shellSetActiveTab(id);" +
           "shellSaveState();" +
         "}" +
 
@@ -309,6 +368,11 @@ public class ShellScript {
 
         "document.addEventListener('keydown', function(e){" +
           "if(e.key==='Escape'){ hideTabContextMenu(); }" +
+          "if((e.ctrlKey||e.metaKey) && e.shiftKey && (e.key==='T'||e.key==='t')){" +
+            "e.preventDefault();" +
+            "shellReopenClosedTab();" +
+            "hideReopenToast();" +
+          "}" +
           "if(e.key==='/' && document.activeElement.tagName!=='INPUT' && document.activeElement.tagName!=='TEXTAREA'){" +
             "e.preventDefault();" +
             "openAddressBar();" +
