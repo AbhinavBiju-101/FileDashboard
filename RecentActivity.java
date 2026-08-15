@@ -12,15 +12,18 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Tracks activity for the home dashboard: recently viewed files, recently
- * downloaded files, and how often each folder gets browsed - persisted to
- * a small JSON file (Config.DATA_DIR/activity.json) so it survives restarts.
+ * Tracks activity for the home dashboard: how often each file gets viewed,
+ * recently downloaded files, and how often each folder gets browsed -
+ * persisted to a small JSON file (Config.DATA_DIR/activity.json) so it
+ * survives restarts.
  *
- * recentViewed/recentDownloaded use access-ordered LinkedHashMaps as a cheap
- * MRU (most-recently-used) cache: re-opening a file just moves it back to
- * the front instead of creating a duplicate entry. Every mutation triggers
- * a write-through save; for a personal local tool the request volume is low
- * enough that this is simpler and safer than batching writes.
+ * viewCounts/folderVisitCounts are simple all-time tallies (never evicted) -
+ * that's deliberate for "frequently viewed": a file you've opened 50 times
+ * shouldn't drop off the list just because you haven't touched it this week.
+ * recentViewed/recentDownloaded stay as access-ordered LinkedHashMaps (a
+ * cheap MRU cache, capped) - recentViewed is no longer shown on the
+ * Dashboard directly, but both still feed the search-suggestion ranker,
+ * where "you just looked at this" is a useful signal even for a one-off view.
  */
 public class RecentActivity {
 
@@ -41,6 +44,7 @@ public class RecentActivity {
             }
         });
 
+    private static final Map<String, Integer> viewCounts = new ConcurrentHashMap<>();
     private static final Map<String, Integer> folderVisitCounts = new ConcurrentHashMap<>();
 
     static {
@@ -49,6 +53,7 @@ public class RecentActivity {
 
     public static void recordView(String relPath) {
         recentViewed.put(relPath, System.currentTimeMillis());
+        viewCounts.merge(relPath, 1, Integer::sum);
         save();
     }
 
@@ -64,11 +69,28 @@ public class RecentActivity {
 
     public static void forgetPath(String relPath) {
         // Called when a file/folder is renamed, moved, or deleted so stale
-        // entries don't linger in "recent" lists pointing at nothing.
+        // entries don't linger in dashboard lists pointing at nothing.
         recentViewed.remove(relPath);
         recentDownloaded.remove(relPath);
+        viewCounts.remove(relPath);
         folderVisitCounts.remove(relPath);
         save();
+    }
+
+    // Highest view count first. Ties broken by most-recently-viewed.
+    public static List<String> getFrequentlyViewed(int limit) {
+        List<String> recencyOrder = getRecentViewed(); // most-recent-first, for tie-breaking
+        List<Map.Entry<String, Integer>> entries = new ArrayList<>(viewCounts.entrySet());
+        entries.sort((a, b) -> {
+            int byCount = b.getValue() - a.getValue();
+            if (byCount != 0) return byCount;
+            return Integer.compare(recencyOrder.indexOf(a.getKey()), recencyOrder.indexOf(b.getKey()));
+        });
+        List<String> result = new ArrayList<>();
+        for (int i = 0; i < Math.min(limit, entries.size()); i++) {
+            result.add(entries.get(i).getKey());
+        }
+        return result;
     }
 
     // Most recent first.
@@ -127,13 +149,12 @@ public class RecentActivity {
             appendEntries(sb, recentDownloaded);
             sb.append("  ],\n");
 
+            sb.append("  \"viewCounts\": {\n");
+            appendCounts(sb, viewCounts);
+            sb.append("  },\n");
+
             sb.append("  \"folderVisits\": {\n");
-            List<String> keys = new ArrayList<>(folderVisitCounts.keySet());
-            for (int i = 0; i < keys.size(); i++) {
-                String k = keys.get(i);
-                sb.append("    \"").append(MiniJson.escape(k)).append("\": ").append(folderVisitCounts.get(k));
-                sb.append(i < keys.size() - 1 ? ",\n" : "\n");
-            }
+            appendCounts(sb, folderVisitCounts);
             sb.append("  }\n");
 
             sb.append("}\n");
@@ -162,6 +183,15 @@ public class RecentActivity {
         }
     }
 
+    private static void appendCounts(StringBuilder sb, Map<String, Integer> map) {
+        List<String> keys = new ArrayList<>(map.keySet());
+        for (int i = 0; i < keys.size(); i++) {
+            String k = keys.get(i);
+            sb.append("    \"").append(MiniJson.escape(k)).append("\": ").append(map.get(k));
+            sb.append(i < keys.size() - 1 ? ",\n" : "\n");
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private static void load() {
         if (!STORE_FILE.exists()) return;
@@ -173,16 +203,8 @@ public class RecentActivity {
 
             loadEntries(root.get("recentViewed"), recentViewed);
             loadEntries(root.get("recentDownloaded"), recentDownloaded);
-
-            Object folderVisitsObj = root.get("folderVisits");
-            if (folderVisitsObj instanceof Map) {
-                Map<String, Object> fv = (Map<String, Object>) folderVisitsObj;
-                for (Map.Entry<String, Object> e : fv.entrySet()) {
-                    if (e.getValue() instanceof Double) {
-                        folderVisitCounts.put(e.getKey(), ((Double) e.getValue()).intValue());
-                    }
-                }
-            }
+            loadCounts(root.get("viewCounts"), viewCounts);
+            loadCounts(root.get("folderVisits"), folderVisitCounts);
         } catch (Exception e) {
             System.err.println("Warning: could not load activity data (starting fresh): " + e.getMessage());
         }
@@ -201,6 +223,17 @@ public class RecentActivity {
             Object time = obj.get("time");
             if (path instanceof String && time instanceof Double) {
                 target.put((String) path, ((Double) time).longValue());
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void loadCounts(Object mapObj, Map<String, Integer> target) {
+        if (!(mapObj instanceof Map)) return;
+        Map<String, Object> m = (Map<String, Object>) mapObj;
+        for (Map.Entry<String, Object> e : m.entrySet()) {
+            if (e.getValue() instanceof Double) {
+                target.put(e.getKey(), ((Double) e.getValue()).intValue());
             }
         }
     }

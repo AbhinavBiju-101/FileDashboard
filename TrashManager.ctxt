@@ -1,0 +1,21 @@
+#BlueJ class context
+#Sun Aug 02 08:07:34 IST 2026
+comment0.target=TrashManager
+comment0.text=\r\n Recycle bin\: "deleting" a file/folder actually moves it into\r\n Config.TRASH_DIR (a hidden folder inside ROOT_DIR) and records where it\r\n came from, so it can be restored later. Nothing is permanently removed\r\n until the person explicitly empties the trash or deletes a single item\r\n from it. Manifest is persisted as JSON so trash survives a restart, same\r\n approach as RecentActivity.\r\n
+comment1.params=target relPath
+comment1.target=TrashManager.Entry moveToTrash(java.io.File, java.lang.String)
+comment1.text=Moves a file/folder into the trash. relPath is relative to ROOT_DIR.
+comment2.params=id
+comment2.target=java.lang.String restore(java.lang.String)
+comment2.text=Moves an item back to where it came from. Fails if something already occupies that spot.
+comment3.params=id
+comment3.target=void permanentlyDelete(java.lang.String)
+comment3.text=Permanently deletes one item from the trash.
+comment4.target=void emptyTrash()
+comment4.text=Empties the entire trash.
+comment5.target=java.util.List list()
+comment6.params=root
+comment6.target=void deleteRecursively(java.nio.file.Path)
+comment7.target=void save()
+comment8.target=void load()
+numComments=9

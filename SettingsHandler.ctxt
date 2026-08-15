@@ -1,0 +1,18 @@
+#BlueJ class context
+#Sun Aug 02 08:07:34 IST 2026
+comment0.target=SettingsHandler
+comment0.text=\r\n Serves "/settings" - GET renders the page, POST applies changes and\r\n redirects back to GET with a status message. A plain form-POST page\r\n rather than an AJAX one, since settings changes are infrequent and a full\r\n reload on save is perfectly fine here.\r\n
+comment1.params=exchange
+comment1.target=void handle(com.sun.net.httpserver.HttpExchange)
+comment2.params=exchange
+comment2.target=void handleGet(com.sun.net.httpserver.HttpExchange)
+comment3.params=exchange
+comment3.target=void handlePost(com.sun.net.httpserver.HttpExchange)
+comment4.params=msg err
+comment4.target=java.lang.String buildPage(java.lang.String, java.lang.String)
+comment5.target=java.lang.String settingsStyles()
+comment6.params=body key
+comment6.target=java.lang.String formParam(java.lang.String, java.lang.String)
+comment7.params=is
+comment7.target=java.lang.String readAll(java.io.InputStream)
+numComments=8

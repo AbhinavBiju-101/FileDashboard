@@ -1,7 +1,7 @@
 #BlueJ class context
-#Thu Jul 30 18:16:17 IST 2026
+#Sun Aug 02 08:07:34 IST 2026
 comment0.target=PathUtil
-comment0.text=\r\n Helpers for turning a URL "path" query param into a real File, safely.\r\n Every incoming request path is resolved against Config.ROOT_DIR and checked\r\n so nobody can escape it with things like "../../etc/passwd".\r\n
+comment0.text=\r\n Helpers for turning a URL "path" query param into a real File, safely.\r\n Every incoming request path is resolved against Config.ROOT_DIR and checked\r\n so nobody can escape it with things like "../../etc/passwd".\r\n\r\n Uses Path.normalize() (lexical - collapses ".."/"." segments without\r\n touching the filesystem) rather than File.getCanonicalFile() (which also\r\n follows symlinks/junctions). That distinction matters in practice\: Windows\r\n often has Desktop/Documents/Pictures redirected via NTFS junction points\r\n (e.g. OneDrive's "Known Folder Move"), and canonicalizing would resolve\r\n those to wherever they actually point - which can legitimately differ\r\n enough from the canonicalized root to incorrectly look like an escape,\r\n even for an ordinary subfolder. Lexical normalization still correctly\r\n blocks real ".." traversal attempts, just without that false positive.\r\n
 comment1.params=relativePath
 comment1.target=java.io.File resolve(java.lang.String)
 comment2.params=file

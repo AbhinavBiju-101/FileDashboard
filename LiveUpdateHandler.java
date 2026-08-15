@@ -41,6 +41,15 @@ public class LiveUpdateHandler implements HttpHandler {
             return;
         }
 
+        if (!Settings.isLiveRefreshEnabled()) {
+            // Live refresh is turned off - close the connection immediately
+            // rather than standing up a WatchService for nothing. The client's
+            // EventSource just won't receive any messages, which is exactly
+            // the "off" behavior (no auto-refresh).
+            exchange.sendResponseHeaders(204, -1);
+            return;
+        }
+
         exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
         exchange.getResponseHeaders().set("Cache-Control", "no-cache");
         exchange.getResponseHeaders().set("Connection", "keep-alive");

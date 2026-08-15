@@ -1,7 +1,7 @@
 #BlueJ class context
-#Thu Jul 30 18:16:17 IST 2026
+#Sun Aug 02 08:07:34 IST 2026
 comment0.target=BrowseHandler
-comment0.text=\r\n Serves "/browse?path\=..."\: a grid view of whatever folder is requested,\r\n relative to Config.ROOT_DIR (the user's home directory), with sorting,\r\n search, whole-folder zip download, and a live auto-refresh connection.\r\n
+comment0.text=\r\n Serves "/browse?path\=..."\: a grid view of whatever folder is requested,\r\n relative to Settings.rootDir() (your home directory by default, or\r\n search, whole-folder zip download, and a live auto-refresh connection.\r\n
 comment1.params=exchange
 comment1.target=void handle(com.sun.net.httpserver.HttpExchange)
 comment2.params=dir relPath sort order
@@ -10,12 +10,13 @@ comment3.params=sort order
 comment3.target=java.util.Comparator buildComparator(java.lang.String, java.lang.String)
 comment4.params=relPath sort order
 comment4.target=java.lang.String buildToolbar(java.lang.String, java.lang.String, java.lang.String)
-comment5.params=encodedPath field currentSort currentOrder label
-comment5.target=java.lang.String sortLink(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String)
-comment6.params=relPath
-comment6.target=java.lang.String buildBreadcrumb(java.lang.String)
+comment5.target=java.lang.String buildFilterChips()
+comment6.params=encodedPath field currentSort currentOrder label
+comment6.target=java.lang.String sortLink(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String)
 comment7.params=relPath
-comment7.target=java.lang.String liveRefreshScript(java.lang.String)
-comment8.params=exchange code msg
-comment8.target=void sendText(com.sun.net.httpserver.HttpExchange, int, java.lang.String)
-numComments=9
+comment7.target=java.lang.String buildBreadcrumb(java.lang.String)
+comment8.params=relPath
+comment8.target=java.lang.String liveRefreshScript(java.lang.String)
+comment9.params=exchange code msg
+comment9.target=void sendText(com.sun.net.httpserver.HttpExchange, int, java.lang.String)
+numComments=10

@@ -10,9 +10,14 @@ import java.util.List;
 /**
  * Serves "/dashboard" - the landing dashboard. This is deliberately separate
  * from the folder browser at "/browse": it's a quick-launch surface
- * (recently opened files, recently downloaded files, frequently visited
+ * (frequently viewed files, recently downloaded files, frequently visited
  * folders), not a directory listing. It's loaded as a tab inside the app
  * shell ("/") rather than being the shell itself.
+ *
+ * All three sections are horizontally-scrollable rows rather than wrapping
+ * grids, and capped at Settings.getDashboardMaxItems() (20 by default) -
+ * keeps the page a fixed, predictable height no matter how much activity
+ * has piled up.
  */
 public class HomeHandler implements HttpHandler {
 
@@ -28,6 +33,8 @@ public class HomeHandler implements HttpHandler {
     }
 
     private String buildPage() {
+        int max = Settings.getDashboardMaxItems();
+
         StringBuilder sb = new StringBuilder();
         sb.append("<!DOCTYPE html><html><head><meta charset='UTF-8'>");
         sb.append("<meta name='viewport' content='width=device-width, initial-scale=1'>");
@@ -37,11 +44,13 @@ public class HomeHandler implements HttpHandler {
         sb.append("<div class='page-content'>");
 
         sb.append("<div class='topbar'><h1>Dashboard</h1>");
-        sb.append("<div class='breadcrumb'>Quick launch for your recent activity</div></div>");
+        sb.append("<div class='breadcrumb'>Quick launch for your activity</div></div>");
 
-        sb.append(fileSection("Recently viewed", RecentActivity.getRecentViewed()));
-        sb.append(fileSection("Recently downloaded", RecentActivity.getRecentDownloaded()));
-        sb.append(frequentFoldersSection());
+        sb.append(fileSection("Frequently viewed", RecentActivity.getFrequentlyViewed(max),
+            "Files you open often will show up here."));
+        sb.append(fileSection("Recently downloaded", RecentActivity.getRecentDownloaded(),
+            "Nothing yet - files you download will show up here."));
+        sb.append(frequentFoldersSection(max));
 
         sb.append(PageScripts.MODAL_HTML);
         sb.append(PageScripts.SCRIPT);
@@ -49,7 +58,7 @@ public class HomeHandler implements HttpHandler {
         return sb.toString();
     }
 
-    private String fileSection(String title, List<String> relPaths) {
+    private String fileSection(String title, List<String> relPaths, String emptyMessage) {
         StringBuilder sb = new StringBuilder();
         sb.append("<h2 class='section-title'>").append(title).append("</h2>");
 
@@ -68,15 +77,15 @@ public class HomeHandler implements HttpHandler {
         }
 
         if (shown == 0) {
-            sb.append("<p class='empty'>Nothing yet - files you open or download will show up here.</p>");
+            sb.append("<p class='empty'>").append(emptyMessage).append("</p>");
         } else {
-            sb.append("<div class='grid'>").append(cards).append("</div>");
+            sb.append("<div class='dash-row'>").append(cards).append("</div>");
         }
         return sb.toString();
     }
 
-    private String frequentFoldersSection() {
-        List<String> folders = RecentActivity.getFrequentFolders(8);
+    private String frequentFoldersSection(int max) {
+        List<String> folders = RecentActivity.getFrequentFolders(max);
         StringBuilder sb = new StringBuilder();
         sb.append("<h2 class='section-title'>Frequent folders</h2>");
 
@@ -98,7 +107,7 @@ public class HomeHandler implements HttpHandler {
         if (shown == 0) {
             sb.append("<p class='empty'>Folders you browse often will show up here.</p>");
         } else {
-            sb.append("<div class='grid'>").append(cards).append("</div>");
+            sb.append("<div class='dash-row'>").append(cards).append("</div>");
         }
         return sb.toString();
     }

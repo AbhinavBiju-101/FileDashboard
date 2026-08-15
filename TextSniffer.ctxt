@@ -1,0 +1,7 @@
+#BlueJ class context
+#Sun Aug 02 08:07:34 IST 2026
+comment0.target=TextSniffer
+comment0.text=\r\n Decides whether a file's *content* looks like text, independent of its\r\n extension - so a custom extension (like a homegrown .vcanvas format) still\r\n gets preview/viewer support automatically, instead of requiring every\r\n possible text-based extension to be hardcoded somewhere.\r\n\r\n Heuristic\: read the first few KB and check for the absence of NUL bytes\r\n (a strong binary signal) and a high ratio of printable/whitespace bytes -\r\n broadly the same approach tools like `file` and `git` use to guess\r\n text-vs-binary.\r\n
+comment1.params=file
+comment1.target=boolean looksLikeText(java.io.File)
+numComments=2

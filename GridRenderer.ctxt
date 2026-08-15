@@ -1,15 +1,17 @@
 #BlueJ class context
-#Thu Jul 30 18:16:17 IST 2026
+#Sun Aug 02 08:07:34 IST 2026
 comment0.target=GridRenderer
-comment0.text=\r\n Renders a single folder or file as an HTML grid card. Shared between\r\n HomeHandler, BrowseHandler, and SearchHandler.\r\n\r\n "View" doesn't navigate away - it triggers the in-app preview modal\r\n (see PageScripts.java) via a data-action attribute. The href is still a\r\n real, correct URL as a fallback (e.g. right-click "open in new tab").\r\n
+comment0.text=\r\n Renders a single folder or file as an HTML grid card. Shared between\r\n HomeHandler, BrowseHandler, SearchHandler, and TrashHandler.\r\n\r\n Cards are deliberately minimal now - just an icon/thumbnail and a name.\r\n Every action (view, download, rename, duplicate, move, delete) lives in\r\n the right-click context menu instead of a row of always-visible links -\r\n see PageScripts.java for the selection model and menu logic. Single click\r\n selects a card (or extends a selection with Ctrl/Shift); double-click\r\n opens it; right-click shows the menu.\r\n
 comment1.params=childRel displayName
 comment1.target=java.lang.String folderCard(java.lang.String, java.lang.String)
 comment2.params=f childRel showFolderPath folderLabel
 comment2.target=java.lang.String fileCard(java.io.File, java.lang.String, boolean, java.lang.String)
 comment3.params=ext
-comment3.target=java.lang.String iconFor(java.lang.String)
-comment4.params=name
-comment4.target=java.lang.String getExtension(java.lang.String)
-comment5.params=bytes
-comment5.target=java.lang.String humanSize(long)
-numComments=6
+comment3.target=java.lang.String categoryFor(java.lang.String)
+comment4.params=ext
+comment4.target=java.lang.String iconFor(java.lang.String)
+comment5.params=name
+comment5.target=java.lang.String getExtension(java.lang.String)
+comment6.params=bytes
+comment6.target=java.lang.String humanSize(long)
+numComments=7

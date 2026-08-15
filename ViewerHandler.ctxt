@@ -1,0 +1,18 @@
+#BlueJ class context
+#Sun Aug 02 08:07:34 IST 2026
+comment0.target=ViewerHandler
+comment0.text=\r\n Serves "/viewer?path\=..." - a dedicated full-tab reading view for PDFs and\r\n text/markdown files, as an alternative to the quick preview modal. Opened\r\n via the right-click "Open Viewer" menu item, which loads it as a new app\r\n tab (via parent.openTab) rather than a small overlay - meant for actually\r\n reading something at length rather than a quick glance.\r\n\r\n Includes Previous/Next links (and Left/Right arrow keys) that step through\r\n sibling files of the same kind in the same folder, so flipping between\r\n chapters/books in a folder doesn't require going back to the grid each time.\r\n
+comment1.params=exchange
+comment1.target=void handle(com.sun.net.httpserver.HttpExchange)
+comment2.params=file relPath ext
+comment2.target=java.lang.String buildPage(java.io.File, java.lang.String, java.lang.String)
+comment3.params=file relPath ext
+comment3.target=java.lang.String[] findNeighbors(java.io.File, java.lang.String, java.lang.String)
+comment4.params=parentRel name
+comment4.target=java.lang.String joinPath(java.lang.String, java.lang.String)
+comment5.target=java.lang.String viewerStyles()
+comment6.params=prevPath nextPath
+comment6.target=java.lang.String viewerScript(java.lang.String, java.lang.String)
+comment7.params=exchange code msg
+comment7.target=void sendText(com.sun.net.httpserver.HttpExchange, int, java.lang.String)
+numComments=8

@@ -1,0 +1,13 @@
+#BlueJ class context
+#Sun Aug 02 08:07:34 IST 2026
+comment0.target=TrashOpsHandler
+comment0.text=\r\n Handles "POST /trashops" with action\=restore|permanent-delete|empty and\r\n (for restore/permanent-delete) an id identifying the trash entry.\r\n
+comment1.params=exchange
+comment1.target=void handle(com.sun.net.httpserver.HttpExchange)
+comment2.params=body key
+comment2.target=java.lang.String formParam(java.lang.String, java.lang.String)
+comment3.params=is
+comment3.target=java.lang.String readAll(java.io.InputStream)
+comment4.params=exchange success message
+comment4.target=void respondJson(com.sun.net.httpserver.HttpExchange, boolean, java.lang.String)
+numComments=5

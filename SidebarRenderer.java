@@ -7,9 +7,11 @@ import java.io.File;
  * exist under Config.ROOT_DIR. Collapsed/expanded state is remembered per
  * browser via localStorage.
  *
- * Every link opens (or focuses) a tab via the shell's openTab() function
- * (see ShellScript.java) rather than navigating away - the sidebar itself
- * lives only in the shell page, not inside any individual tab's iframe.
+ * Every link navigates the currently active tab in place (like clicking a
+ * normal link would) via the shell's navigateCurrentTab() function - it does
+ * NOT open a new tab each time. The "+" button in the tab bar is the only
+ * thing that creates a genuinely new tab. The sidebar itself lives only in
+ * the shell page, not inside any individual tab's iframe.
  */
 public class SidebarRenderer {
 
@@ -32,14 +34,18 @@ public class SidebarRenderer {
 
         sb.append(item("/dashboard", "&#127968;", "Dashboard"));
         sb.append(item("/browse?path=", "&#127760;", "Home"));
+        sb.append(item("/trash", "&#128465;", "Recycle Bin"));
         sb.append("<div class='sidebar-divider'></div>");
 
         for (String[] folder : CLASSIC_FOLDERS) {
-            File f = new File(Config.ROOT_DIR, folder[0]);
+            File f = new File(Settings.rootDir(), folder[0]);
             if (f.isDirectory()) {
                 sb.append(item("/browse?path=" + PathUtil.urlEncode(folder[0]), folder[1], folder[0]));
             }
         }
+
+        sb.append("<div class='sidebar-divider'></div>");
+        sb.append(item("/settings", "&#9881;", "Settings"));
 
         sb.append("</div></div>");
         sb.append(SCRIPT);
@@ -48,9 +54,8 @@ public class SidebarRenderer {
 
     private static String item(String href, String icon, String label) {
         String jsHref = href.replace("\\", "\\\\").replace("'", "\\'");
-        String jsLabel = label.replace("\\", "\\\\").replace("'", "\\'");
         return "<a class='sidebar-item' href='" + href + "' " +
-               "onclick=\"return openTab('" + jsHref + "', '" + jsLabel + "');\">" +
+               "onclick=\"return navigateCurrentTab('" + jsHref + "');\">" +
                "<span class='sidebar-icon'>" + icon + "</span>" +
                "<span class='sidebar-label'>" + label + "</span></a>";
     }

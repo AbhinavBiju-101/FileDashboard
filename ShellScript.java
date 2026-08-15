@@ -49,6 +49,26 @@ public class ShellScript {
           "return false;" +
         "}" +
 
+        // Navigates whichever tab is currently active to a new URL, in
+        // place - no new tab created. This is what sidebar links use: like
+        // clicking a link normally navigates the current page, sidebar
+        // navigation updates the current tab rather than spawning a new
+        // one every time. openTab() (above) is reserved for things that
+        // should genuinely open alongside what you're already looking at,
+        // like the "+" button or "Open Viewer".
+        "function navigateCurrentTab(url){" +
+          "if(!shellActiveTabId){ return openTab(url); }" +
+          "var iframe=document.getElementById(shellActiveTabId+'-frame');" +
+          "if(!iframe){ return openTab(url); }" +
+          "iframe.src=url;" +
+          "var tabObj=shellTabs.find(function(t){ return t.id===shellActiveTabId; });" +
+          "if(tabObj){ tabObj.url=url; tabObj.title='Loading...'; }" +
+          "var btn=document.getElementById(shellActiveTabId);" +
+          "if(btn){ var span=btn.querySelector('.tab-title'); if(span) span.textContent='Loading...'; }" +
+          "shellSaveState();" +
+          "return false;" +
+        "}" +
+
         "function shellCreateTabElement(id, url, title){" +
           "var tabbar=document.getElementById('tabbar');" +
           "var newTabBtn=document.getElementById('newTabBtn');" +
@@ -104,6 +124,49 @@ public class ShellScript {
           "}" +
           "shellSaveState();" +
         "}" +
+
+        // ---- Address bar (press "/" to open, type a path, Enter to go) ----
+        "function openAddressBar(){" +
+          "var overlay=document.getElementById('addressBarOverlay');" +
+          "var input=document.getElementById('addressBarInput');" +
+          "var prefill='';" +
+          "var activeTab=shellTabs.find(function(t){ return t.id===shellActiveTabId; });" +
+          "if(activeTab && activeTab.url.indexOf('/browse?path=')===0){" +
+            "prefill=decodeURIComponent(activeTab.url.substring('/browse?path='.length));" +
+          "}" +
+          "input.value=prefill;" +
+          "overlay.classList.add('open');" +
+          "input.focus();" +
+          "input.select();" +
+        "}" +
+        "function closeAddressBar(){" +
+          "document.getElementById('addressBarOverlay').classList.remove('open');" +
+          "document.getElementById('addressBarInput').blur();" +
+        "}" +
+        "function goToAddressBarPath(){" +
+          "var raw=document.getElementById('addressBarInput').value;" +
+          "var normalized=raw.replace(/\\\\/g,'/').trim();" +
+          "var rootNormalized=SHELL_ROOT_ABS.replace(/\\\\/g,'/');" +
+          // Strip the root's own absolute path if someone pasted a full path
+          // (e.g. "C:/Users/You/Documents" when root is "C:/Users/You").
+          "if(normalized.toLowerCase().indexOf(rootNormalized.toLowerCase())===0){" +
+            "normalized=normalized.substring(rootNormalized.length);" +
+          "}" +
+          "while(normalized.charAt(0)==='/') normalized=normalized.substring(1);" +
+          "closeAddressBar();" +
+          "navigateCurrentTab('/browse?path='+encodeURIComponent(normalized));" +
+        "}" +
+        "document.addEventListener('keydown', function(e){" +
+          "if(e.key==='/' && document.activeElement.tagName!=='INPUT' && document.activeElement.tagName!=='TEXTAREA'){" +
+            "e.preventDefault();" +
+            "openAddressBar();" +
+          "}" +
+        "});" +
+        "document.getElementById('addressBarInput') && document.getElementById('addressBarInput').addEventListener('keydown', function(e){" +
+          "if(e.key==='Enter'){ goToAddressBarPath(); }" +
+          "else if(e.key==='Escape'){ closeAddressBar(); }" +
+          "e.stopPropagation();" +
+        "});" +
 
         "document.addEventListener('DOMContentLoaded', function(){" +
           "if(!shellLoadState()){ openTab('/dashboard','Dashboard'); }" +

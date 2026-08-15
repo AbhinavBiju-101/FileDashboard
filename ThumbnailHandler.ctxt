@@ -1,5 +1,5 @@
 #BlueJ class context
-#Thu Jul 30 18:16:17 IST 2026
+#Sun Aug 02 08:07:34 IST 2026
 comment0.target=ThumbnailHandler
 comment0.text=\r\n Serves "/thumbnail?path\=..." - a small scaled-down PNG for image files.\r\n Thumbnails are cached in memory, keyed by path + last-modified time, so\r\n scrolling a folder repeatedly doesn't re-decode images every time.\r\n
 comment1.params=exchange

@@ -72,7 +72,7 @@ public class SearchHandler implements HttpHandler {
         sb.append("</head><body>");
         sb.append("<div class='page-content'>");
 
-        sb.append("<div class='topbar'><a class='brand-link' href='/dashboard' onclick=\"if(parent&&parent.openTab){ parent.openTab('/dashboard','Dashboard'); return false; }\"><h1>File Dashboard</h1></a>");
+        sb.append("<div class='topbar'><a class='brand-link' href='/dashboard' onclick=\"if(parent&&parent.navigateCurrentTab){ parent.navigateCurrentTab('/dashboard'); return false; }\"><h1>File Dashboard</h1></a>");
         sb.append("<div class='breadcrumb'><a href='/browse?path=").append(PathUtil.urlEncode(relPath)).append("'>&larr; Back to folder</a></div>");
         sb.append("</div>");
 
@@ -86,6 +86,19 @@ public class SearchHandler implements HttpHandler {
           .append(matches.size()).append(matches.size() == MAX_RESULTS ? "+ " : " ")
           .append("result").append(matches.size() == 1 ? "" : "s").append(" for \"")
           .append(PathUtil.htmlEscape(q)).append("\"</p>");
+
+        if (!matches.isEmpty()) {
+            String[][] chips = {
+                {"all", "All"}, {"image", "Images"}, {"pdf", "PDFs"}, {"document", "Docs"},
+                {"video", "Video"}, {"audio", "Audio"}, {"archive", "Archives"}, {"other", "Other"}
+            };
+            sb.append("<div class='filter-chips' style='padding:0 24px;'>");
+            for (int i = 0; i < chips.length; i++) {
+                sb.append("<span class='chip").append(i == 0 ? " active" : "").append("' data-filter='")
+                  .append(chips[i][0]).append("'>").append(chips[i][1]).append("</span>");
+            }
+            sb.append("</div>");
+        }
 
         sb.append("<div class='grid'>");
         for (File f : matches) {

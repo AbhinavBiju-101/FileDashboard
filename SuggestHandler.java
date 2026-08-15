@@ -27,7 +27,7 @@ public class SuggestHandler implements HttpHandler {
         try {
             searchRoot = PathUtil.resolve(relPath);
         } catch (IOException e) {
-            searchRoot = Config.ROOT_DIR;
+            searchRoot = Settings.rootDir();
         }
 
         List<SearchSuggester.Suggestion> suggestions = SearchSuggester.suggest(q, searchRoot);

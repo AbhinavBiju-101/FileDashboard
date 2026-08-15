@@ -1,8 +1,10 @@
 /**
  * Everything client-side that's shared across content pages (Dashboard,
- * Browse, Search): the in-app preview modal (images/PDF/text/audio/video,
- * Google-Drive style, instead of leaving the page) and the rename/duplicate/
- * delete actions on each card. Included once per page via MODAL_HTML + SCRIPT.
+ * Browse, Search, Recycle Bin): the in-app preview modal, the selection
+ * model (click/ctrl-click/shift-click/double-click), the right-click
+ * context menu, the "Move to..." folder picker, type-filter chips, and
+ * new-folder/rename/duplicate/move/delete actions. Included once per page
+ * via MODAL_HTML + SCRIPT.
  */
 public class PageScripts {
 
@@ -17,6 +19,16 @@ public class PageScripts {
         "<button class='preview-close' onclick='closePreview()' aria-label='Close'>&times;</button>" +
         "</div></div>" +
         "<div id='previewBody' class='preview-body'></div>" +
+        "</div></div>" +
+
+        "<div id='contextMenu' class='context-menu'></div>" +
+
+        "<div id='moveModalOverlay' class='move-modal-overlay' onclick=\"if(event.target===this) closeMoveModal();\">" +
+        "<div class='move-modal-box'>" +
+        "<h3>Move to...</h3>" +
+        "<input type='text' id='moveSearchInput' placeholder='Search folders...' autocomplete='off'>" +
+        "<div id='moveFolderList' class='move-folder-list'></div>" +
+        "<div class='move-modal-actions'><button onclick='closeMoveModal()'>Cancel</button></div>" +
         "</div></div>";
 
     public static final String SCRIPT =
@@ -28,7 +40,9 @@ public class PageScripts {
         "var PREVIEW_VIDEO_EXTS=['mp4','webm','mov','m4v'];" +
         "var PREVIEW_TEXT_EXTS=['txt','md','csv','json','xml','log','html','htm','css','js','ts','java','py','c','cpp','h','hpp','sh','yml','yaml','ini','conf','properties'];" +
 
+        "var currentPreviewPath=null;" +
         "function openPreview(path, name, ext, viewable){" +
+          "currentPreviewPath=path;" +
           "var overlay=document.getElementById('previewOverlay');" +
           "var body=document.getElementById('previewBody');" +
           "document.getElementById('previewTitle').textContent=name;" +
@@ -52,25 +66,228 @@ public class PageScripts {
             "body.innerHTML='<audio controls autoplay src=\"'+fileUrl+'\"></audio>';" +
           "}else if(PREVIEW_VIDEO_EXTS.indexOf(ext)!==-1){" +
             "body.innerHTML='<video controls autoplay src=\"'+fileUrl+'\"></video>';" +
-          "}else if(PREVIEW_TEXT_EXTS.indexOf(ext)!==-1){" +
+          "}else{" +
+            // Anything else the server marked viewable must be text-like -
+            // that's the only remaining category (including custom/unknown
+            // extensions detected by content-sniffing rather than a
+            // hardcoded list, e.g. a homegrown .vcanvas format).
             "body.innerHTML='<pre>Loading...</pre>';" +
             "fetch(fileUrl).then(function(r){return r.text();}).then(function(text){" +
               "var pre=document.createElement('pre'); pre.textContent=text;" +
               "body.innerHTML=''; body.appendChild(pre);" +
             "});" +
-          "}else{" +
-            "body.innerHTML=\"<div class='preview-nopreview'><p>Preview not available.</p></div>\";" +
           "}" +
           "overlay.classList.add('open');" +
         "}" +
-
         "function closePreview(){" +
           "document.getElementById('previewOverlay').classList.remove('open');" +
-          "document.getElementById('previewBody').innerHTML='';" + // stops audio/video playback
+          "document.getElementById('previewBody').innerHTML='';" +
+          "currentPreviewPath=null;" +
         "}" +
-        "document.addEventListener('keydown', function(e){ if(e.key==='Escape') closePreview(); });" +
+        "function isViewableExt(ext){" +
+          "return PREVIEW_IMAGE_EXTS.indexOf(ext)!==-1||PREVIEW_AUDIO_EXTS.indexOf(ext)!==-1||" +
+            "PREVIEW_VIDEO_EXTS.indexOf(ext)!==-1||PREVIEW_TEXT_EXTS.indexOf(ext)!==-1||ext==='pdf';" +
+        "}" +
+        // Left/Right arrow keys step to the previous/next file card while a
+        // preview is open, wrapping around at either end - lets someone
+        // flick through a whole folder of images (or books) without
+        // closing and reopening the modal each time.
+        "function navigatePreview(direction){" +
+          "if(!currentPreviewPath) return;" +
+          "var cards=Array.prototype.slice.call(document.querySelectorAll('.card.file[data-path]'))" +
+            ".filter(function(c){ return c.style.display!=='none'; });" +
+          "var idx=cards.findIndex(function(c){ return c.dataset.path===currentPreviewPath; });" +
+          "if(idx===-1||cards.length===0) return;" +
+          "var nextIdx=(idx+direction+cards.length)%cards.length;" +
+          "var next=cards[nextIdx];" +
+          "openPreview(next.dataset.path, next.dataset.name, next.dataset.ext, next.dataset.viewable==='1');" +
+          "if(typeof selectOnly==='function') selectOnly(next);" +
+        "}" +
 
-        // ---- Rename / duplicate / delete ----
+        // ---- Selection model ----
+        "var selectedPaths=[];" +
+        "var lastSelectedCard=null;" +
+        "function allCards(){ return Array.prototype.slice.call(document.querySelectorAll('.card[data-path]')); }" +
+        "function clearSelection(){" +
+          "allCards().forEach(function(c){ c.classList.remove('selected'); });" +
+          "selectedPaths=[];" +
+        "}" +
+        "function selectOnly(card){ clearSelection(); card.classList.add('selected'); selectedPaths=[card.dataset.path]; lastSelectedCard=card; }" +
+        "function toggleSelect(card){" +
+          "var idx=selectedPaths.indexOf(card.dataset.path);" +
+          "if(idx===-1){ card.classList.add('selected'); selectedPaths.push(card.dataset.path); }" +
+          "else{ card.classList.remove('selected'); selectedPaths.splice(idx,1); }" +
+          "lastSelectedCard=card;" +
+        "}" +
+        "function rangeSelect(card){" +
+          "var cards=allCards();" +
+          "var from=lastSelectedCard?cards.indexOf(lastSelectedCard):0;" +
+          "var to=cards.indexOf(card);" +
+          "if(from===-1) from=0;" +
+          "var start=Math.min(from,to), end=Math.max(from,to);" +
+          "clearSelection();" +
+          "for(var i=start;i<=end;i++){ cards[i].classList.add('selected'); selectedPaths.push(cards[i].dataset.path); }" +
+          "lastSelectedCard=card;" +
+        "}" +
+
+        "document.addEventListener('click', function(e){" +
+          "var card=e.target.closest('.card[data-path]');" +
+          "if(!card){" +
+            "if(!e.target.closest('.context-menu') && !e.target.closest('.move-modal-overlay')) clearSelection();" +
+            "return;" +
+          "}" +
+          "if(e.target.closest('a,button')) return;" + // let real links/buttons behave normally
+          "if(e.shiftKey){ rangeSelect(card); }" +
+          "else if(e.ctrlKey||e.metaKey){ toggleSelect(card); }" +
+          "else{ selectOnly(card); }" +
+        "});" +
+
+        "document.addEventListener('dblclick', function(e){" +
+          "var card=e.target.closest('.card[data-path]');" +
+          "if(!card) return;" +
+          "if(card.dataset.type==='folder'){ location.href='/browse?path='+encodeURIComponent(card.dataset.path); }" +
+          "else{ openPreview(card.dataset.path, card.dataset.name, card.dataset.ext, card.dataset.viewable==='1'); }" +
+        "});" +
+
+        // ---- Context menu ----
+        "function menuItem(label, action){ return '<div class=\"context-menu-item\" data-menu-action=\"'+action+'\">'+label+'</div>'; }" +
+        "function menuDivider(){ return '<div class=\"context-menu-divider\"></div>'; }" +
+
+        "document.addEventListener('contextmenu', function(e){" +
+          "var card=e.target.closest('.card[data-path]');" +
+          "if(card){" +
+            "e.preventDefault();" +
+            "if(selectedPaths.indexOf(card.dataset.path)===-1){ selectOnly(card); }" +
+            "showContextMenu(e.clientX, e.clientY);" +
+            "return;" +
+          "}" +
+          "var grid=e.target.closest('.grid[data-current-path]');" +
+          "if(grid){" +
+            "e.preventDefault();" +
+            "clearSelection();" +
+            "showFolderContextMenu(e.clientX, e.clientY, grid.dataset.currentPath);" +
+          "}" +
+        "});" +
+
+        "function showFolderContextMenu(x, y, folderPath){" +
+          "var menu=document.getElementById('contextMenu');" +
+          "menu.innerHTML=" +
+            "menuItem('New folder here','new-folder-here')+" +
+            "menuItem('Download this folder as .zip','zip-current-folder');" +
+          "menu.dataset.folderPath=folderPath;" +
+          "menu.style.display='block';" +
+          "var maxX=window.innerWidth-menu.offsetWidth-8, maxY=window.innerHeight-menu.offsetHeight-8;" +
+          "menu.style.left=Math.min(x,maxX)+'px';" +
+          "menu.style.top=Math.min(y,maxY)+'px';" +
+          "menu.classList.add('open');" +
+        "}" +
+
+        "function showContextMenu(x, y){" +
+          "var menu=document.getElementById('contextMenu');" +
+          "var html='';" +
+          "if(selectedPaths.length>1){" +
+            "html+=menuItem('Download selected as .zip','zip-selection');" +
+            "html+=menuItem('Move selected to...','move-selection');" +
+            "html+=menuDivider();" +
+            "html+=menuItem('Delete selected','delete-selection');" +
+          "}else{" +
+            "var card=lastSelectedCard;" +
+            "var type=card.dataset.type;" +
+            "if(type==='file'){" +
+              "html+=menuItem('Open','open-item');" +
+              "if(card.dataset.ext==='pdf'||card.dataset.textlike==='1'){" +
+                "html+=menuItem('Open Viewer','open-viewer');" +
+              "}" +
+              "html+=menuItem('Open in new tab','open-new-tab');" +
+              "html+=menuItem('Download','download-item');" +
+              "html+=menuDivider();" +
+              "html+=menuItem('Rename','rename-item');" +
+              "html+=menuItem('Duplicate','duplicate-item');" +
+              "html+=menuItem('Move to...','move-item');" +
+              "html+=menuDivider();" +
+              "html+=menuItem('Delete','delete-item');" +
+            "}else{" +
+              "html+=menuItem('Open','open-item');" +
+              "html+=menuDivider();" +
+              "html+=menuItem('Rename','rename-item');" +
+              "html+=menuItem('Duplicate','duplicate-item');" +
+              "html+=menuItem('Move to...','move-item');" +
+              "html+=menuDivider();" +
+              "html+=menuItem('Delete','delete-item');" +
+            "}" +
+          "}" +
+          "menu.innerHTML=html;" +
+          "menu.style.display='block';" +
+          "var maxX=window.innerWidth-menu.offsetWidth-8, maxY=window.innerHeight-menu.offsetHeight-8;" +
+          "menu.style.left=Math.min(x,maxX)+'px';" +
+          "menu.style.top=Math.min(y,maxY)+'px';" +
+          "menu.classList.add('open');" +
+        "}" +
+        "function hideContextMenu(){ document.getElementById('contextMenu').classList.remove('open'); }" +
+
+        // Closing the menu needs to handle more than "clicked elsewhere in
+        // this document": since each page lives inside a shell iframe,
+        // clicking the sidebar/tab bar/scrollbar happens in a DIFFERENT
+        // document entirely and would never reach a plain same-document
+        // click listener. 'blur' on window fires whenever focus leaves this
+        // iframe for any reason (another frame, the browser chrome,
+        // scrollbar interaction, etc.), which is the reliable cross-frame
+        // signal. Scrolling and any mousedown outside the menu close it too.
+        "window.addEventListener('blur', hideContextMenu);" +
+        "document.addEventListener('scroll', hideContextMenu, true);" +
+        "document.addEventListener('mousedown', function(e){" +
+          "if(!e.target.closest('.context-menu')) hideContextMenu();" +
+        "});" +
+
+        "document.addEventListener('click', function(e){" +
+          "var item=e.target.closest('.context-menu-item');" +
+          "if(item){ runMenuAction(item.dataset.menuAction); hideContextMenu(); return; }" +
+          "if(!e.target.closest('.context-menu')) hideContextMenu();" +
+        "});" +
+        "document.addEventListener('keydown', function(e){" +
+          "if(e.key==='Escape'){ hideContextMenu(); closeMoveModal(); closePreview(); return; }" +
+          "if(currentPreviewPath && (e.key==='ArrowLeft'||e.key==='ArrowRight')){" +
+            "e.preventDefault();" +
+            "navigatePreview(e.key==='ArrowLeft'?-1:1);" +
+            "return;" +
+          "}" +
+          "if(e.key==='/' && document.activeElement.tagName!=='INPUT' && document.activeElement.tagName!=='TEXTAREA'){" +
+            "if(window.parent && window.parent!==window && window.parent.openAddressBar){" +
+              "e.preventDefault();" +
+              "window.parent.openAddressBar();" +
+            "}" +
+          "}" +
+        "});" +
+
+        "function runMenuAction(action){" +
+          "var card=lastSelectedCard;" +
+          "if(action==='open-item'){" +
+            "if(card.dataset.type==='folder'){ location.href='/browse?path='+encodeURIComponent(card.dataset.path); }" +
+            "else{ openPreview(card.dataset.path, card.dataset.name, card.dataset.ext, card.dataset.viewable==='1'); }" +
+          "}else if(action==='open-new-tab'){" +
+            "var mode=isViewableExt(card.dataset.ext)?'view':'preview';" +
+            "window.open('/file?path='+encodeURIComponent(card.dataset.path)+'&mode='+mode, '_blank');" +
+          "}else if(action==='open-viewer'){" +
+            "var viewerUrl='/viewer?path='+encodeURIComponent(card.dataset.path);" +
+            "if(window.parent && window.parent.openTab){ window.parent.openTab(viewerUrl, card.dataset.name); }" +
+            "else{ window.open(viewerUrl, '_blank'); }" +
+          "}else if(action==='download-item'){" +
+            "window.location.href='/file?path='+encodeURIComponent(card.dataset.path)+'&mode=download';" +
+          "}else if(action==='rename-item'){ renameItem(card.dataset.path, card.dataset.name); }" +
+          "else if(action==='duplicate-item'){ duplicateItem(card.dataset.path); }" +
+          "else if(action==='delete-item'){ deleteItem(card.dataset.path, card.dataset.name); }" +
+          "else if(action==='move-item'){ openMoveModal([card.dataset.path]); }" +
+          "else if(action==='zip-selection'){" +
+            "window.location.href='/zip-selection?paths='+encodeURIComponent(selectedPaths.join('|'));" +
+          "}else if(action==='move-selection'){ openMoveModal(selectedPaths.slice()); }" +
+          "else if(action==='delete-selection'){ deleteSelection(); }" +
+          "else if(action==='new-folder-here'){ newFolder(document.getElementById('contextMenu').dataset.folderPath); }" +
+          "else if(action==='zip-current-folder'){" +
+            "window.location.href='/zip?path='+encodeURIComponent(document.getElementById('contextMenu').dataset.folderPath);" +
+          "}" +
+        "}" +
+
+        // ---- Rename / duplicate / delete / new folder ----
         "function postFileOp(params){" +
           "return fetch('/fileops',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})" +
           ".then(function(r){return r.json();});" +
@@ -88,28 +305,118 @@ public class PageScripts {
           "});" +
         "}" +
         "function deleteItem(path, name){" +
-          "if(!confirm('Delete \"'+name+'\"? This cannot be undone.')) return;" +
+          "if(!confirm('Move \"'+name+'\" to the recycle bin?')) return;" +
           "postFileOp(new URLSearchParams({action:'delete',path:path})).then(function(res){" +
             "if(res.success){ location.reload(); } else { alert('Delete failed: '+res.message); }" +
           "});" +
         "}" +
+        "function deleteSelection(){" +
+          "if(!confirm('Move '+selectedPaths.length+' items to the recycle bin?')) return;" +
+          "var paths=selectedPaths.slice();" +
+          "Promise.all(paths.map(function(p){" +
+            "return postFileOp(new URLSearchParams({action:'delete',path:p}));" +
+          "})).then(function(){ location.reload(); });" +
+        "}" +
+        "function newFolder(parentPath){" +
+          "var name=prompt('New folder name:', 'New Folder');" +
+          "if(!name) return;" +
+          "postFileOp(new URLSearchParams({action:'create-folder',path:parentPath,newName:name})).then(function(res){" +
+            "if(res.success){ location.reload(); } else { alert('Could not create folder: '+res.message); }" +
+          "});" +
+        "}" +
 
-        // ---- Click delegation for every card on the page ----
+        // ---- Move to... modal ----
+        "var moveTargetPaths=[];" +
+        "function openMoveModal(paths){" +
+          "moveTargetPaths=paths;" +
+          "document.getElementById('moveModalOverlay').classList.add('open');" +
+          "document.getElementById('moveSearchInput').value='';" +
+          "loadFolderList('');" +
+          "document.getElementById('moveSearchInput').focus();" +
+        "}" +
+        "function closeMoveModal(){ document.getElementById('moveModalOverlay').classList.remove('open'); }" +
+        "function loadFolderList(q){" +
+          "fetch('/folders?q='+encodeURIComponent(q)).then(function(r){return r.json();}).then(function(folders){" +
+            "var list=document.getElementById('moveFolderList');" +
+            "if(!folders.length){ list.innerHTML=\"<div class='move-folder-empty'>No matching folders.</div>\"; return; }" +
+            "list.innerHTML=folders.map(function(f){" +
+              "var p=f.path.replace(/\"/g,'&quot;');" +
+              "return '<div class=\"move-folder-item\" data-move-dest=\"'+p+'\">&#128193; '+f.label+'</div>';" +
+            "}).join('');" +
+          "});" +
+        "}" +
+        "document.addEventListener('click', function(e){" +
+          "var item=e.target.closest('.move-folder-item');" +
+          "if(!item) return;" +
+          "var dest=item.dataset.moveDest;" +
+          "Promise.all(moveTargetPaths.map(function(p){" +
+            "return postFileOp(new URLSearchParams({action:'move',path:p,destPath:dest}));" +
+          "})).then(function(results){" +
+            "var failed=results.filter(function(r){return !r.success;});" +
+            "if(failed.length){ alert('Some items could not be moved: '+failed.map(function(r){return r.message;}).join('; ')); }" +
+            "closeMoveModal(); location.reload();" +
+          "});" +
+        "});" +
+
+        // ---- Trash actions ----
+        "function restoreItem(id, name){" +
+          "fetch('/trashops',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'restore',id:id}).toString()})" +
+          ".then(function(r){return r.json();}).then(function(res){" +
+            "if(res.success){ location.reload(); } else { alert('Restore failed: '+res.message); }" +
+          "});" +
+        "}" +
+        "function permanentDeleteItem(id, name){" +
+          "if(!confirm('Permanently delete \"'+name+'\"? This cannot be undone.')) return;" +
+          "fetch('/trashops',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'permanent-delete',id:id}).toString()})" +
+          ".then(function(r){return r.json();}).then(function(res){" +
+            "if(res.success){ location.reload(); } else { alert('Delete failed: '+res.message); }" +
+          "});" +
+        "}" +
+        "function emptyTrash(){" +
+          "if(!confirm('Permanently delete everything in the recycle bin? This cannot be undone.')) return;" +
+          "fetch('/trashops',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'empty'}).toString()})" +
+          ".then(function(r){return r.json();}).then(function(res){" +
+            "if(res.success){ location.reload(); } else { alert('Failed: '+res.message); }" +
+          "});" +
+        "}" +
+
+        // ---- Type-filter chips ----
+        "var CHIP_GROUPS={all:null,image:['image'],pdf:['pdf'],document:['document','spreadsheet','presentation']," +
+          "video:['video'],audio:['audio'],archive:['archive'],other:['other']};" +
+        "document.addEventListener('click', function(e){" +
+          "var chip=e.target.closest('.chip');" +
+          "if(!chip) return;" +
+          "document.querySelectorAll('.chip').forEach(function(c){ c.classList.remove('active'); });" +
+          "chip.classList.add('active');" +
+          "var group=CHIP_GROUPS[chip.dataset.filter];" +
+          "document.querySelectorAll('.card.file').forEach(function(card){" +
+            "var show=!group||group.indexOf(card.dataset.category)!==-1;" +
+            "card.style.display=show?'':'none';" +
+          "});" +
+        "});" +
+
+        // ---- Click delegation for simple data-action links (new folder, trash) ----
         "document.addEventListener('click', function(e){" +
           "var t=e.target.closest('[data-action]');" +
           "if(!t) return;" +
           "e.preventDefault();" +
-          "var action=t.dataset.action, path=t.dataset.path, name=t.dataset.name;" +
-          "if(action==='view'){ openPreview(path,name,t.dataset.ext,t.dataset.viewable==='1'); }" +
-          "else if(action==='rename'){ renameItem(path,name); }" +
-          "else if(action==='duplicate'){ duplicateItem(path); }" +
-          "else if(action==='delete'){ deleteItem(path,name); }" +
+          "var action=t.dataset.action, path=t.dataset.path, name=t.dataset.name, id=t.dataset.id;" +
+          "if(action==='new-folder'){ newFolder(path); }" +
+          "else if(action==='restore'){ restoreItem(id,name); }" +
+          "else if(action==='permanent-delete'){ permanentDeleteItem(id,name); }" +
+          "else if(action==='empty-trash'){ emptyTrash(); }" +
         "});" +
 
         // ---- Live search suggestions ----
         "(function(){" +
-          "var debounceTimer;" +
+          "var debounceTimer, moveDebounce;" +
           "document.addEventListener('input', function(e){" +
+            "if(e.target.id==='moveSearchInput'){" +
+              "clearTimeout(moveDebounce);" +
+              "var val=e.target.value;" +
+              "moveDebounce=setTimeout(function(){ loadFolderList(val); }, 150);" +
+              "return;" +
+            "}" +
             "if(!e.target.classList.contains('js-search-input')) return;" +
             "var input=e.target;" +
             "var wrap=input.closest('.search-suggest-wrap');" +
@@ -142,9 +449,7 @@ public class PageScripts {
               "if(type==='folder'){ location.href='/browse?path='+encodeURIComponent(path); }" +
               "else{" +
                 "var ext=name.indexOf('.')!==-1?name.split('.').pop().toLowerCase():'';" +
-                "var viewable=PREVIEW_IMAGE_EXTS.indexOf(ext)!==-1||PREVIEW_AUDIO_EXTS.indexOf(ext)!==-1||" +
-                  "PREVIEW_VIDEO_EXTS.indexOf(ext)!==-1||PREVIEW_TEXT_EXTS.indexOf(ext)!==-1||ext==='pdf';" +
-                "openPreview(path,name,ext,viewable);" +
+                "openPreview(path,name,ext,isViewableExt(ext));" +
               "}" +
               "return;" +
             "}" +

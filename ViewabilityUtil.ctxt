@@ -1,7 +1,9 @@
 #BlueJ class context
-#Thu Jul 30 18:16:17 IST 2026
+#Sun Aug 02 08:07:34 IST 2026
 comment0.target=ViewabilityUtil
-comment0.text=\r\n Decides whether a file type is something a browser can actually render\r\n inline (image, pdf, text, audio, video) versus something it would just\r\n dump as raw bytes (docx, xlsx, zip, exe, unknown extensions, etc.).\r\n\r\n This exists specifically so the "View" button never lands someone on a\r\n page of garbage bytes - if a type isn't in here, they get a clear\r\n "no preview available" message with a Download option instead.\r\n
-comment1.params=extensionLowercase
-comment1.target=boolean isViewable(java.lang.String)
-numComments=2
+comment0.text=\r\n Decides whether a file type is something a browser can actually render\r\n inline (image, pdf, audio, video, or text) versus something it would just\r\n dump as raw bytes (docx, xlsx, zip, exe, etc.).\r\n\r\n Images/PDF/audio/video are decided purely by extension - sniffing\r\n wouldn't help identify a binary format anyway. Text is different\: rather\r\n than requiring every possible text-based extension to be hardcoded here,\r\n unrecognized extensions fall back to TextSniffer reading the actual file\r\n content - so a custom format (like a homegrown .vcanvas) still gets full\r\n viewer support without needing code changes for every possible extension.\r\n
+comment1.params=file extLowercase
+comment1.target=boolean isViewable(java.io.File, java.lang.String)
+comment2.params=file extLowercase
+comment2.target=boolean isTextLike(java.io.File, java.lang.String)
+numComments=3

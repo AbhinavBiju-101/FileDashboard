@@ -11,7 +11,7 @@ import java.util.Comparator;
 
 /**
  * Serves "/browse?path=...": a grid view of whatever folder is requested,
- * relative to Config.ROOT_DIR (the user's home directory), with sorting,
+ * relative to Settings.rootDir() (your home directory by default, or
  * search, whole-folder zip download, and a live auto-refresh connection.
  */
 public class BrowseHandler implements HttpHandler {
@@ -41,7 +41,15 @@ public class BrowseHandler implements HttpHandler {
 
         RecentActivity.recordFolderVisit(relPath);
 
-        String html = buildPage(dir, relPath, sort, order);
+        String html;
+        try {
+            html = buildPage(dir, relPath, sort, order);
+        } catch (Exception e) {
+            sendText(exchange, 500, "Something went wrong listing this folder: " + e.getMessage() +
+                "\n\nThis can happen with unusual filesystem entries (broken symlinks, junction points, " +
+                "permission-restricted items). Try a specific subfolder instead.");
+            return;
+        }
         byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
         exchange.sendResponseHeaders(200, bytes.length);
@@ -65,7 +73,7 @@ public class BrowseHandler implements HttpHandler {
         sb.append("<div class='page-content'>");
 
         sb.append("<div class='topbar'>");
-        sb.append("<a class='brand-link' href='/dashboard' onclick=\"if(parent&&parent.openTab){ parent.openTab('/dashboard','Dashboard'); return false; }\"><h1>File Dashboard</h1></a>");
+        sb.append("<a class='brand-link' href='/dashboard' onclick=\"if(parent&&parent.navigateCurrentTab){ parent.navigateCurrentTab('/dashboard'); return false; }\"><h1>File Dashboard</h1></a>");
         sb.append(buildBreadcrumb(relPath));
         sb.append(buildToolbar(relPath, sort, order));
         sb.append("</div>");
@@ -76,15 +84,27 @@ public class BrowseHandler implements HttpHandler {
           .append("<button type='submit'>Upload here</button>")
           .append("</form>");
 
-        sb.append("<div class='grid'>");
+        sb.append("<div class='grid' data-current-path=\"").append(PathUtil.htmlEscape(relPath)).append("\">");
 
+        int skipped = 0;
         for (File f : entries) {
-            String childRel = relPath.isEmpty() ? f.getName() : relPath + "/" + f.getName();
-            if (f.isDirectory()) {
-                sb.append(GridRenderer.folderCard(childRel, f.getName()));
-            } else {
-                sb.append(GridRenderer.fileCard(f, childRel, false, null));
+            try {
+                String childRel = relPath.isEmpty() ? f.getName() : relPath + "/" + f.getName();
+                if (f.isDirectory()) {
+                    sb.append(GridRenderer.folderCard(childRel, f.getName()));
+                } else {
+                    sb.append(GridRenderer.fileCard(f, childRel, false, null));
+                }
+            } catch (Exception e) {
+                // A single unreadable file, broken symlink, or Windows junction
+                // point shouldn't be able to blank the whole page - skip it and
+                // keep rendering the rest of the folder.
+                skipped++;
             }
+        }
+        if (skipped > 0) {
+            sb.append("<p class='empty'>(").append(skipped).append(" item").append(skipped == 1 ? "" : "s")
+              .append(" couldn't be displayed and ").append(skipped == 1 ? "was" : "were").append(" skipped.)</p>");
         }
 
         if (entries.length == 0) {
@@ -121,7 +141,6 @@ public class BrowseHandler implements HttpHandler {
         sb.append(sortLink(encodedPath, "size", sort, order, "Size"));
         sb.append(sortLink(encodedPath, "date", sort, order, "Date"));
 
-        sb.append("<a class='toolbar-action' href='/zip?path=").append(encodedPath).append("'>Download folder as .zip</a>");
 
         sb.append("<div class='search-suggest-wrap'>");
         sb.append("<form class='search-inline' method='GET' action='/search'>")
@@ -132,6 +151,22 @@ public class BrowseHandler implements HttpHandler {
         sb.append("<div class='search-suggestions' id='searchSuggestions'></div>");
         sb.append("</div>");
 
+        sb.append("</div>");
+        sb.append(buildFilterChips());
+        return sb.toString();
+    }
+
+    private String buildFilterChips() {
+        String[][] chips = {
+            {"all", "All"}, {"image", "Images"}, {"pdf", "PDFs"}, {"document", "Docs"},
+            {"video", "Video"}, {"audio", "Audio"}, {"archive", "Archives"}, {"other", "Other"}
+        };
+        StringBuilder sb = new StringBuilder("<div class='filter-chips'>");
+        for (int i = 0; i < chips.length; i++) {
+            String activeClass = i == 0 ? " active" : "";
+            sb.append("<span class='chip").append(activeClass).append("' data-filter='").append(chips[i][0])
+              .append("'>").append(chips[i][1]).append("</span>");
+        }
         sb.append("</div>");
         return sb.toString();
     }

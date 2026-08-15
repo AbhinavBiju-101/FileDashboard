@@ -52,6 +52,12 @@ public class MimeUtil {
             // fall through to the manual table below
         }
         String ext = GridRenderer.getExtension(file.getName()).toLowerCase();
-        return EXT_TO_MIME.getOrDefault(ext, "application/octet-stream");
+        if (EXT_TO_MIME.containsKey(ext)) return EXT_TO_MIME.get(ext);
+
+        // Unrecognized extension - if the content actually looks like text
+        // (e.g. a custom format like .vcanvas), serve it as such instead of
+        // falling back to a download-triggering octet-stream.
+        if (TextSniffer.looksLikeText(file)) return "text/plain";
+        return "application/octet-stream";
     }
 }
