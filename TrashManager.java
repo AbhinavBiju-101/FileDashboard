@@ -67,45 +67,81 @@ public class TrashManager {
 
     /** Moves an item back to where it came from. Fails if something already occupies that spot. */
     public static synchronized String restore(String id) throws IOException {
+        return restore(id, null);
+    }
+
+    // sub identifies one file/folder *inside* a trashed folder (relative,
+    // forward-slashed - same convention TrashBrowseHandler/TrashFileHandler
+    // use). When empty/null, restores the whole trash entry (original
+    // behavior). When set, restores just that nested item to its
+    // corresponding spot under the entry's original location, leaving the
+    // rest of the trashed folder (and its manifest entry) in place - lets
+    // someone pull one file back out of a trashed folder without having to
+    // restore the entire folder.
+    public static synchronized String restore(String id, String sub) throws IOException {
         Entry e = entries.get(id);
         if (e == null) throw new IOException("That item is no longer in the trash.");
 
-        File trashedFile = new File(Config.TRASH_DIR, e.trashedName);
-        if (!trashedFile.exists()) {
+        File trashedBase = new File(Config.TRASH_DIR, e.trashedName);
+        if (!trashedBase.exists()) {
             entries.remove(id);
             save();
             throw new IOException("That item's data is missing from the trash - removing the stale entry.");
         }
 
-        File destination = new File(Settings.rootDir(), e.originalRelPath);
+        boolean nested = sub != null && !sub.isEmpty();
+        File source = nested ? PathUtil.resolveWithinBase(trashedBase, sub) : trashedBase;
+        if (!source.exists()) {
+            throw new IOException("That item is no longer in the trash.");
+        }
+
+        String destRelPath = nested
+            ? (e.originalRelPath.isEmpty() ? sub : e.originalRelPath + "/" + sub)
+            : e.originalRelPath;
+        File destination = new File(Settings.rootDir(), destRelPath);
         if (destination.exists()) {
-            throw new IOException("Can't restore - \"" + e.originalName + "\" already exists at its original location.");
+            throw new IOException("Can't restore - \"" + source.getName() + "\" already exists at its original location.");
         }
 
         File parent = destination.getParentFile();
         if (!parent.exists()) parent.mkdirs();
 
-        Files.move(trashedFile.toPath(), destination.toPath());
-        entries.remove(id);
-        save();
-        return e.originalRelPath;
+        Files.move(source.toPath(), destination.toPath());
+        if (!nested) {
+            entries.remove(id);
+            save();
+        }
+        return destRelPath;
     }
 
     /** Permanently deletes one item from the trash. */
     public static synchronized void permanentlyDelete(String id) throws IOException {
+        permanentlyDelete(id, null);
+    }
+
+    // Same sub convention as restore() above: empty/null deletes the whole
+    // trash entry (and its manifest record); set, deletes just that nested
+    // file/folder from inside the trashed folder, leaving the rest of it
+    // (and the manifest entry) alone.
+    public static synchronized void permanentlyDelete(String id, String sub) throws IOException {
         Entry e = entries.get(id);
         if (e == null) throw new IOException("That item is no longer in the trash.");
 
-        File trashedFile = new File(Config.TRASH_DIR, e.trashedName);
-        if (trashedFile.exists()) {
-            if (trashedFile.isDirectory()) {
-                deleteRecursively(trashedFile.toPath());
+        File trashedBase = new File(Config.TRASH_DIR, e.trashedName);
+        boolean nested = sub != null && !sub.isEmpty();
+        File target = nested ? PathUtil.resolveWithinBase(trashedBase, sub) : trashedBase;
+
+        if (target.exists()) {
+            if (target.isDirectory()) {
+                deleteRecursively(target.toPath());
             } else {
-                Files.delete(trashedFile.toPath());
+                Files.delete(target.toPath());
             }
         }
-        entries.remove(id);
-        save();
+        if (!nested) {
+            entries.remove(id);
+            save();
+        }
     }
 
     /** Empties the entire trash. */

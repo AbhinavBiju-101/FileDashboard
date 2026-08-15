@@ -33,6 +33,23 @@ public class PathUtil {
         return target.toFile();
     }
 
+    // Same "no escaping via .." protection as resolve() above, but scoped to
+    // an arbitrary base directory instead of ROOT_DIR - used by the trash
+    // handlers/manager to safely reach inside a single trashed folder
+    // (which lives under Config.TRASH_DIR, outside ROOT_DIR entirely).
+    public static File resolveWithinBase(File base, String sub) throws IOException {
+        String cleaned = sub == null ? "" : sub.replace("\\", "/");
+        while (cleaned.startsWith("/")) cleaned = cleaned.substring(1);
+
+        Path basePath = base.toPath().toAbsolutePath().normalize();
+        Path target = basePath.resolve(cleaned).normalize();
+
+        if (!target.equals(basePath) && !target.startsWith(basePath)) {
+            throw new IOException("Access outside that folder is not allowed.");
+        }
+        return target.toFile();
+    }
+
     // Given a File somewhere under ROOT_DIR, return its path relative to the
     // root using forward slashes (e.g. "Photos/2024/beach.jpg").
     public static String relativeToRoot(File file) {

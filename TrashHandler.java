@@ -1,6 +1,7 @@
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -65,16 +66,34 @@ public class TrashHandler implements HttpHandler {
     }
 
     private String trashCard(TrashManager.Entry e, SimpleDateFormat fmt) {
-        String icon = e.isDirectory ? "&#128193;" : GridRenderer.iconFor(GridRenderer.getExtension(e.originalName).toLowerCase());
+        String ext = e.isDirectory ? "" : GridRenderer.getExtension(e.originalName).toLowerCase();
+        String icon = e.isDirectory ? "&#128193;" : GridRenderer.iconFor(ext);
         String name = PathUtil.htmlEscape(e.originalName);
         String location = e.originalRelPath.contains("/")
             ? e.originalRelPath.substring(0, e.originalRelPath.lastIndexOf('/'))
             : "Home";
+        String cardTypeClass = e.isDirectory ? "folder" : "file";
 
+        // Same data-type="trash" card TrashBrowseHandler renders for items
+        // *inside* a trashed folder (data-trash-sub="" here just means
+        // "this entry itself", vs. a non-empty sub for nested items) -
+        // that's what lets a single click-handling/context-menu code path
+        // in PageScripts.js cover both the top-level Recycle Bin and
+        // browsing inside a trashed folder identically.
         StringBuilder sb = new StringBuilder();
-        sb.append("<div class=\"card\" data-path=\"").append(e.id)
+        sb.append("<div class=\"card ").append(cardTypeClass).append("\" data-path=\"").append(e.id)
           .append("\" data-name=\"").append(name)
-          .append("\" data-type=\"trash\" data-isdir=\"").append(e.isDirectory ? "1" : "0").append("\">");
+          .append("\" data-type=\"trash\" data-isdir=\"").append(e.isDirectory ? "1" : "0")
+          .append("\" data-trash-id=\"").append(e.id).append("\" data-trash-sub=\"\"");
+        if (!e.isDirectory) {
+            File trashedFile = new File(Config.TRASH_DIR, e.trashedName);
+            boolean viewable = ViewabilityUtil.isViewable(trashedFile, ext);
+            boolean textlike = ViewabilityUtil.isTextLike(trashedFile, ext);
+            sb.append(" data-ext=\"").append(ext)
+              .append("\" data-viewable=\"").append(viewable ? "1" : "0")
+              .append("\" data-textlike=\"").append(textlike ? "1" : "0").append("\"");
+        }
+        sb.append(">");
         sb.append("<div class=\"icon\">").append(icon).append("</div>");
         sb.append("<div class=\"name\" title=\"").append(name).append("\">").append(name).append("</div>");
         if (!e.isDirectory) {

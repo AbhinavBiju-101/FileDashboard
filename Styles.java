@@ -1,12 +1,18 @@
 public class Styles {
-    // A small blue folder glyph, inlined as an SVG data URI so no extra file
-    // or route is needed. Sits at the front of CSS (below) so every page
-    // that appends Styles.CSS - which is all of them - gets it automatically,
-    // rather than needing to remember to add it handler-by-handler.
+    // A folder glyph on the app's own dark-sidebar backdrop, with two small
+    // "cards" tucked inside it to echo the grid-of-cards look every page
+    // uses - inlined as an SVG data URI so no extra file or route is
+    // needed. Sits at the front of CSS (below) so every page that appends
+    // Styles.CSS - which is all of them - gets it automatically, rather
+    // than needing to remember to add it handler-by-handler.
     public static final String FAVICON =
         "<link rel='icon' href=\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3E" +
-        "%3Cpath%20fill='%232563eb'%20d='M3%205a2%202%200%200%201%202-2h4l2%202h8a2%202%200%200%201%202%202v10a2%202%200%200%201-2%202H5" +
-        "a2%202%200%200%201-2-2V5z'/%3E%3C/svg%3E\">";
+        "%3Crect%20width='24'%20height='24'%20rx='6'%20fill='%231f2328'/%3E" +
+        "%3Cpath%20fill='%232563eb'%20d='M5%208a2%202%200%200%201%202-2h3l1.7%201.8H17a2%202%200%200%201%202%202V17a2%202%200%200%201-2%202H7" +
+        "a2%202%200%200%201-2-2V8z'/%3E" +
+        "%3Crect%20x='8.3'%20y='11.3'%20width='3.1'%20height='3.1'%20rx='0.7'%20fill='%23ffffff'%20fill-opacity='0.95'/%3E" +
+        "%3Crect%20x='12.1'%20y='11.3'%20width='3.1'%20height='3.1'%20rx='0.7'%20fill='%23ffffff'%20fill-opacity='0.6'/%3E" +
+        "%3C/svg%3E\">";
 
     public static final String CSS =
         FAVICON +

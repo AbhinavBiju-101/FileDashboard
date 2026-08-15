@@ -21,6 +21,7 @@ public class PageScripts {
         "<div class='preview-header-actions'>" +
         "<span id='previewExtraAction'></span>" +
         "<span id='previewViewerAction'></span>" +
+        "<a id='previewOpenFolderLink' href=\"#\" onclick=\"openPreviewFolder(); return false;\" class='preview-download'>Open folder</a>" +
         "<a id='previewDownloadLink' href='#' class='preview-download'>Download</a>" +
         "<button class='preview-close' onclick='closePreview()' aria-label='Close'>&times;</button>" +
         "</div></div>" +
@@ -48,13 +49,25 @@ public class PageScripts {
         "var PREVIEW_VIDEO_EXTS=['mp4','webm','mov','m4v'];" +
         "var PREVIEW_TEXT_EXTS=['txt','md','csv','json','xml','log','html','htm','css','js','ts','java','py','c','cpp','h','hpp','sh','yml','yaml','ini','conf','properties'];" +
 
+        // trashId/trashSub are only present when previewing a file found
+        // while browsing *inside* a trashed folder (see
+        // TrashBrowseHandler) - everywhere else they're omitted/undefined,
+        // and every trash-aware bit below just falls back to the normal
+        // /file?path=... behavior.
         "var currentPreviewPath=null;" +
-        "function openPreview(path, name, ext, viewable, textlike){" +
+        "var currentPreviewTrashId=null;" +
+        "var currentPreviewTrashSub='';" +
+        "function openPreview(path, name, ext, viewable, textlike, trashId, trashSub){" +
           "currentPreviewPath=path;" +
+          "currentPreviewTrashId=trashId||null;" +
+          "currentPreviewTrashSub=trashSub||'';" +
           "var overlay=document.getElementById('previewOverlay');" +
           "var body=document.getElementById('previewBody');" +
           "document.getElementById('previewTitle').textContent=name;" +
-          "document.getElementById('previewDownloadLink').href='/file?path='+encodeURIComponent(path)+'&mode=download';" +
+          "var downloadUrl=currentPreviewTrashId?" +
+            "('/trash-file?id='+encodeURIComponent(currentPreviewTrashId)+'&sub='+encodeURIComponent(currentPreviewTrashSub)+'&mode=download'):" +
+            "('/file?path='+encodeURIComponent(path)+'&mode=download');" +
+          "document.getElementById('previewDownloadLink').href=downloadUrl;" +
           "document.getElementById('previewExtraAction').innerHTML='';" +
           // Same file types the right-click "Open Viewer" menu item offers
           // (pdf, or anything text-like) - the viewer's dedicated reading
@@ -63,7 +76,9 @@ public class PageScripts {
           "if(ext==='pdf'||textlike){" +
             "viewerAction.innerHTML='<a href=\"#\" onclick=\"openPreviewInViewer(); return false;\" class=\"preview-download\">Open in Viewer</a>';" +
           "}else{ viewerAction.innerHTML=''; }" +
-          "var fileUrl='/file?path='+encodeURIComponent(path)+'&mode=view';" +
+          "var fileUrl=currentPreviewTrashId?" +
+            "('/trash-file?id='+encodeURIComponent(currentPreviewTrashId)+'&sub='+encodeURIComponent(currentPreviewTrashSub)+'&mode=view'):" +
+            "('/file?path='+encodeURIComponent(path)+'&mode=view');" +
           "body.innerHTML='';" +
 
           "if(!viewable){" +
@@ -113,18 +128,45 @@ public class PageScripts {
           "document.getElementById('previewOverlay').classList.remove('open');" +
           "document.getElementById('previewBody').innerHTML='';" +
           "currentPreviewPath=null;" +
+          "currentPreviewTrashId=null;" +
+          "currentPreviewTrashSub='';" +
         "}" +
         // Hands off the file currently open in the quick-preview modal to
         // the full Viewer tab (same destination as the right-click "Open
         // Viewer" menu item), then closes the modal since the person is
         // continuing to look at the same file, just in a bigger view.
         "function openPreviewInViewer(){" +
-          "if(!currentPreviewPath) return;" +
+          "if(!currentPreviewPath && !currentPreviewTrashId) return;" +
           "var name=document.getElementById('previewTitle').textContent;" +
-          "var viewerUrl='/viewer?path='+encodeURIComponent(currentPreviewPath);" +
+          "var viewerUrl=currentPreviewTrashId?" +
+            "('/viewer?trashId='+encodeURIComponent(currentPreviewTrashId)+'&trashSub='+encodeURIComponent(currentPreviewTrashSub)):" +
+            "('/viewer?path='+encodeURIComponent(currentPreviewPath));" +
           "closePreview();" +
           "if(window.parent && window.parent.openTab){ window.parent.openTab(viewerUrl, name); }" +
           "else{ window.open(viewerUrl, '_blank'); }" +
+        "}" +
+        // "Open folder" - jumps to wherever the file currently open in the
+        // preview modal actually lives, so previewing a hit from search
+        // (or from the recycle bin) doesn't leave someone wondering where
+        // it is. Navigates the shell's current tab when embedded in the
+        // app frame (same pattern as the sidebar/brand links), otherwise
+        // just changes this page's own location.
+        "function openPreviewFolder(){" +
+          "var url;" +
+          "if(currentPreviewTrashId){" +
+            "var sub=currentPreviewTrashSub||'';" +
+            "var lastSlash=sub.lastIndexOf('/');" +
+            "var parentSub=lastSlash===-1?'':sub.substring(0,lastSlash);" +
+            "url='/trash-browse?id='+encodeURIComponent(currentPreviewTrashId)+(parentSub?('&sub='+encodeURIComponent(parentSub)):'');" +
+          "}else if(currentPreviewPath){" +
+            "var lastSlash=currentPreviewPath.lastIndexOf('/');" +
+            "var folderPath=lastSlash===-1?'':currentPreviewPath.substring(0,lastSlash);" +
+            "url='/browse?path='+encodeURIComponent(folderPath);" +
+          "}else{ return; }" +
+          "closePreview();" +
+          "if(window.parent && window.parent.navigateCurrentTab){ window.parent.navigateCurrentTab(url); }" +
+          "else if(window.navigateCurrentTab){ window.navigateCurrentTab(url); }" +
+          "else{ location.href=url; }" +
         "}" +
         "function isViewableExt(ext){" +
           "return PREVIEW_IMAGE_EXTS.indexOf(ext)!==-1||PREVIEW_AUDIO_EXTS.indexOf(ext)!==-1||" +
@@ -135,14 +177,18 @@ public class PageScripts {
         // flick through a whole folder of images (or books) without
         // closing and reopening the modal each time.
         "function navigatePreview(direction){" +
-          "if(!currentPreviewPath) return;" +
+          "if(!currentPreviewPath && !currentPreviewTrashId) return;" +
+          "var inTrash=!!currentPreviewTrashId;" +
           "var cards=Array.prototype.slice.call(document.querySelectorAll('.card.file[data-path]'))" +
-            ".filter(function(c){ return c.style.display!=='none'; });" +
-          "var idx=cards.findIndex(function(c){ return c.dataset.path===currentPreviewPath; });" +
+            ".filter(function(c){ return c.style.display!=='none' && (inTrash?c.dataset.type==='trash':c.dataset.type!=='trash'); });" +
+          "var idx=cards.findIndex(function(c){" +
+            "return inTrash?(c.dataset.trashId===currentPreviewTrashId && (c.dataset.trashSub||'')===currentPreviewTrashSub):" +
+              "c.dataset.path===currentPreviewPath;" +
+          "});" +
           "if(idx===-1||cards.length===0) return;" +
           "var nextIdx=(idx+direction+cards.length)%cards.length;" +
           "var next=cards[nextIdx];" +
-          "openPreview(next.dataset.path, next.dataset.name, next.dataset.ext, next.dataset.viewable==='1', next.dataset.textlike==='1');" +
+          "openPreview(next.dataset.path, next.dataset.name, next.dataset.ext, next.dataset.viewable==='1', next.dataset.textlike==='1', next.dataset.trashId, next.dataset.trashSub);" +
           "if(typeof selectOnly==='function') selectOnly(next);" +
         "}" +
 
@@ -191,8 +237,16 @@ public class PageScripts {
             // Trashed items live outside the normal browse tree, so a
             // trashed folder can't just reuse /browse?path=... - it needs
             // its own read-only listing (see /trash-browse) that can see
-            // inside the recycle bin without restoring it first.
-            "if(card.dataset.isdir==='1'){ location.href='/trash-browse?id='+encodeURIComponent(card.dataset.path); }" +
+            // inside the recycle bin without restoring it first. Works the
+            // same whether this card is a top-level Recycle Bin entry
+            // (trashSub is empty) or a folder found while already browsing
+            // inside one (trashSub points deeper).
+            "if(card.dataset.isdir==='1'){" +
+              "var sub=card.dataset.trashSub;" +
+              "location.href='/trash-browse?id='+encodeURIComponent(card.dataset.trashId)+(sub?('&sub='+encodeURIComponent(sub)):'');" +
+            "}else{" +
+              "openPreview(card.dataset.path, card.dataset.name, card.dataset.ext, card.dataset.viewable==='1', card.dataset.textlike==='1', card.dataset.trashId, card.dataset.trashSub);" +
+            "}" +
             "return;" +
           "}" +
           "if(card.dataset.type==='folder'){ location.href='/browse?path='+encodeURIComponent(card.dataset.path); }" +
@@ -253,6 +307,14 @@ public class PageScripts {
             "if(type==='trash'){" +
               "if(card.dataset.isdir==='1'){" +
                 "html+=menuItem('Open','open-trash-folder');" +
+                "html+=menuDivider();" +
+              "}else{" +
+                "html+=menuItem('Open','open-item');" +
+                "if(card.dataset.ext==='pdf'||card.dataset.textlike==='1'){" +
+                  "html+=menuItem('Open Viewer','open-viewer');" +
+                "}" +
+                "html+=menuItem('Open in new tab','open-new-tab');" +
+                "html+=menuItem('Download','download-item');" +
                 "html+=menuDivider();" +
               "}" +
               "html+=menuItem('Restore','restore-item');" +
@@ -327,16 +389,34 @@ public class PageScripts {
           "var card=lastSelectedCard;" +
           "if(action==='open-item'){" +
             "if(card.dataset.type==='folder'){ location.href='/browse?path='+encodeURIComponent(card.dataset.path); }" +
-            "else{ openPreview(card.dataset.path, card.dataset.name, card.dataset.ext, card.dataset.viewable==='1', card.dataset.textlike==='1'); }" +
+            "else if(card.dataset.type==='trash'){" +
+              "if(card.dataset.isdir==='1'){" +
+                "var sub=card.dataset.trashSub;" +
+                "location.href='/trash-browse?id='+encodeURIComponent(card.dataset.trashId)+(sub?('&sub='+encodeURIComponent(sub)):'');" +
+              "}else{" +
+                "openPreview(card.dataset.path, card.dataset.name, card.dataset.ext, card.dataset.viewable==='1', card.dataset.textlike==='1', card.dataset.trashId, card.dataset.trashSub);" +
+              "}" +
+            "}else{ openPreview(card.dataset.path, card.dataset.name, card.dataset.ext, card.dataset.viewable==='1', card.dataset.textlike==='1'); }" +
           "}else if(action==='open-new-tab'){" +
-            "var mode=isViewableExt(card.dataset.ext)?'view':'preview';" +
-            "window.open('/file?path='+encodeURIComponent(card.dataset.path)+'&mode='+mode, '_blank');" +
+            "if(card.dataset.type==='trash'){" +
+              "var tmode=isViewableExt(card.dataset.ext)?'view':'download';" +
+              "window.open('/trash-file?id='+encodeURIComponent(card.dataset.trashId)+'&sub='+encodeURIComponent(card.dataset.trashSub||'')+'&mode='+tmode, '_blank');" +
+            "}else{" +
+              "var mode=isViewableExt(card.dataset.ext)?'view':'preview';" +
+              "window.open('/file?path='+encodeURIComponent(card.dataset.path)+'&mode='+mode, '_blank');" +
+            "}" +
           "}else if(action==='open-viewer'){" +
-            "var viewerUrl='/viewer?path='+encodeURIComponent(card.dataset.path);" +
+            "var viewerUrl=card.dataset.type==='trash'?" +
+              "('/viewer?trashId='+encodeURIComponent(card.dataset.trashId)+'&trashSub='+encodeURIComponent(card.dataset.trashSub||'')):" +
+              "('/viewer?path='+encodeURIComponent(card.dataset.path));" +
             "if(window.parent && window.parent.openTab){ window.parent.openTab(viewerUrl, card.dataset.name); }" +
             "else{ window.open(viewerUrl, '_blank'); }" +
           "}else if(action==='download-item'){" +
-            "window.location.href='/file?path='+encodeURIComponent(card.dataset.path)+'&mode=download';" +
+            "if(card.dataset.type==='trash'){" +
+              "window.location.href='/trash-file?id='+encodeURIComponent(card.dataset.trashId)+'&sub='+encodeURIComponent(card.dataset.trashSub||'')+'&mode=download';" +
+            "}else{" +
+              "window.location.href='/file?path='+encodeURIComponent(card.dataset.path)+'&mode=download';" +
+            "}" +
           "}else if(action==='rename-item'){ renameItem(card.dataset.path, card.dataset.name); }" +
           "else if(action==='duplicate-item'){ duplicateItem(card.dataset.path); }" +
           "else if(action==='delete-item'){ deleteItem(card.dataset.path, card.dataset.name); }" +
@@ -348,12 +428,15 @@ public class PageScripts {
           "else if(action==='new-folder-here'){ newFolder(document.getElementById('contextMenu').dataset.folderPath); }" +
           "else if(action==='zip-current-folder'){" +
             "window.location.href='/zip?path='+encodeURIComponent(document.getElementById('contextMenu').dataset.folderPath);" +
-          "}else if(action==='restore-item'){ restoreItem(card.dataset.path, card.dataset.name); }" +
-          "else if(action==='open-trash-folder'){ location.href='/trash-browse?id='+encodeURIComponent(card.dataset.path); }" +
-          "else if(action==='permanent-delete-item'){ permanentDeleteItem(card.dataset.path, card.dataset.name); }" +
+          "}else if(action==='restore-item'){ restoreItem(card.dataset.trashId, card.dataset.trashSub, card.dataset.name); }" +
+          "else if(action==='open-trash-folder'){" +
+            "var sub=card.dataset.trashSub;" +
+            "location.href='/trash-browse?id='+encodeURIComponent(card.dataset.trashId)+(sub?('&sub='+encodeURIComponent(sub)):'');" +
+          "}else if(action==='permanent-delete-item'){ permanentDeleteItem(card.dataset.trashId, card.dataset.trashSub, card.dataset.name); }" +
           "else if(action==='restore-selection'){" +
-            "Promise.all(selectedPaths.map(function(id){" +
-              "return fetch('/trashops',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'restore',id:id}).toString()}).then(function(r){return r.json();});" +
+            "var cards=allCards().filter(function(c){return selectedPaths.indexOf(c.dataset.path)!==-1;});" +
+            "Promise.all(cards.map(function(c){" +
+              "return fetch('/trashops',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'restore',id:c.dataset.trashId,sub:c.dataset.trashSub||''}).toString()}).then(function(r){return r.json();});" +
             "})).then(function(results){" +
               "var failed=results.filter(function(r){return !r.success;});" +
               "if(failed.length){ alert('Some items could not be restored: '+failed.map(function(r){return r.message;}).join('; ')); }" +
@@ -361,8 +444,9 @@ public class PageScripts {
             "});" +
           "}else if(action==='permanent-delete-selection'){" +
             "if(!confirm('Permanently delete '+selectedPaths.length+' items? This cannot be undone.')) return;" +
-            "Promise.all(selectedPaths.map(function(id){" +
-              "return fetch('/trashops',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'permanent-delete',id:id}).toString()}).then(function(r){return r.json();});" +
+            "var cards=allCards().filter(function(c){return selectedPaths.indexOf(c.dataset.path)!==-1;});" +
+            "Promise.all(cards.map(function(c){" +
+              "return fetch('/trashops',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'permanent-delete',id:c.dataset.trashId,sub:c.dataset.trashSub||''}).toString()}).then(function(r){return r.json();});" +
             "})).then(function(results){" +
               "var failed=results.filter(function(r){return !r.success;});" +
               "if(failed.length){ alert('Some items could not be deleted: '+failed.map(function(r){return r.message;}).join('; ')); }" +
@@ -462,15 +546,18 @@ public class PageScripts {
         "});" +
 
         // ---- Trash actions ----
-        "function restoreItem(id, name){" +
-          "fetch('/trashops',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'restore',id:id}).toString()})" +
+        // sub identifies one item *inside* a trashed folder (empty/omitted
+        // restores or permanently deletes the whole trash entry instead -
+        // see TrashManager.restore/permanentlyDelete(id, sub)).
+        "function restoreItem(id, sub, name){" +
+          "fetch('/trashops',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'restore',id:id,sub:sub||''}).toString()})" +
           ".then(function(r){return r.json();}).then(function(res){" +
             "if(res.success){ location.reload(); } else { alert('Restore failed: '+res.message); }" +
           "});" +
         "}" +
-        "function permanentDeleteItem(id, name){" +
+        "function permanentDeleteItem(id, sub, name){" +
           "if(!confirm('Permanently delete \"'+name+'\"? This cannot be undone.')) return;" +
-          "fetch('/trashops',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'permanent-delete',id:id}).toString()})" +
+          "fetch('/trashops',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'permanent-delete',id:id,sub:sub||''}).toString()})" +
           ".then(function(r){return r.json();}).then(function(res){" +
             "if(res.success){ location.reload(); } else { alert('Delete failed: '+res.message); }" +
           "});" +
@@ -505,8 +592,8 @@ public class PageScripts {
           "e.preventDefault();" +
           "var action=t.dataset.action, path=t.dataset.path, name=t.dataset.name, id=t.dataset.id;" +
           "if(action==='new-folder'){ newFolder(path); }" +
-          "else if(action==='restore'){ restoreItem(id,name); }" +
-          "else if(action==='permanent-delete'){ permanentDeleteItem(id,name); }" +
+          "else if(action==='restore'){ restoreItem(id,'',name); }" +
+          "else if(action==='permanent-delete'){ permanentDeleteItem(id,'',name); }" +
           "else if(action==='empty-trash'){ emptyTrash(); }" +
         "});" +
 

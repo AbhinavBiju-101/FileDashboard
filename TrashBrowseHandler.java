@@ -50,7 +50,7 @@ public class TrashBrowseHandler implements HttpHandler {
         File base = new File(Config.TRASH_DIR, entry.trashedName);
         File dir;
         try {
-            dir = resolveWithinBase(base, sub);
+            dir = PathUtil.resolveWithinBase(base, sub);
         } catch (IOException e) {
             sendText(exchange, 403, "Forbidden: " + e.getMessage());
             return;
@@ -68,21 +68,6 @@ public class TrashBrowseHandler implements HttpHandler {
         try (OutputStream os = exchange.getResponseBody()) {
             os.write(bytes);
         }
-    }
-
-    // Same "no escaping via .." protection as PathUtil.resolve(), just
-    // scoped to the trashed folder's own directory instead of ROOT_DIR.
-    private File resolveWithinBase(File base, String sub) throws IOException {
-        String cleaned = sub.replace("\\", "/");
-        while (cleaned.startsWith("/")) cleaned = cleaned.substring(1);
-
-        Path basePath = base.toPath().toAbsolutePath().normalize();
-        Path target = basePath.resolve(cleaned).normalize();
-
-        if (!target.equals(basePath) && !target.startsWith(basePath)) {
-            throw new IOException("Access outside the trashed folder is not allowed.");
-        }
-        return target.toFile();
     }
 
     private String buildPage(TrashManager.Entry entry, File dir, String sub) {
@@ -134,30 +119,51 @@ public class TrashBrowseHandler implements HttpHandler {
         return sb.toString();
     }
 
-    // Folders inside a trashed folder navigate deeper via this same
-    // handler; note this deliberately does NOT reuse GridRenderer's
-    // data-type="folder" card, since that type's click handling assumes a
-    // ROOT_DIR-relative path (it would try /browse?path=... on something
-    // that doesn't exist there). Plain links keep it unambiguous.
+    // Folders/files inside a trashed folder now render as the same kind of
+    // selectable .card div GridRenderer produces everywhere else, just
+    // tagged data-type="trash" (matching the top-level Recycle Bin cards)
+    // plus data-trash-id/data-trash-sub so PageScripts.js can build
+    // /trash-file and /trash-browse URLs instead of the ROOT_DIR-relative
+    // ones it uses for data-type="folder"/"file" cards. This is what gives
+    // items in here the same click-to-select, double-click-to-open,
+    // right-click menu (preview, open in viewer, restore, delete forever)
+    // and multi-select behavior as every other folder - previously these
+    // were plain <a href> links, which is why clicking a file just
+    // downloaded it instead of previewing it.
     private String trashFolderCard(String id, String childSub, String displayName) {
         String name = PathUtil.htmlEscape(displayName);
-        String href = "/trash-browse?id=" + PathUtil.urlEncode(id) + "&sub=" + PathUtil.urlEncode(childSub);
-        return "<a class=\"card folder\" href=\"" + href + "\">" +
+        String idEsc = PathUtil.htmlEscape(id);
+        String subEsc = PathUtil.htmlEscape(childSub);
+        String dataPath = PathUtil.htmlEscape(id + "/" + childSub);
+        return "<div class=\"card folder\" data-path=\"" + dataPath + "\" data-name=\"" + name +
+               "\" data-type=\"trash\" data-isdir=\"1\" data-trash-id=\"" + idEsc +
+               "\" data-trash-sub=\"" + subEsc + "\">" +
                "<div class=\"icon\">&#128193;</div>" +
                "<div class=\"name\" title=\"" + name + "\">" + name + "</div>" +
-               "</a>";
+               "</div>";
     }
 
     private String trashFileCard(String id, String childSub, File f) {
         String ext = GridRenderer.getExtension(f.getName()).toLowerCase();
         String name = PathUtil.htmlEscape(f.getName());
-        String href = "/trash-file?id=" + PathUtil.urlEncode(id) + "&sub=" + PathUtil.urlEncode(childSub);
+        String idEsc = PathUtil.htmlEscape(id);
+        String subEsc = PathUtil.htmlEscape(childSub);
+        String dataPath = PathUtil.htmlEscape(id + "/" + childSub);
+        boolean viewable = ViewabilityUtil.isViewable(f, ext);
+        boolean textlike = ViewabilityUtil.isTextLike(f, ext);
+
         StringBuilder sb = new StringBuilder();
-        sb.append("<a class=\"card file\" href=\"").append(href).append("\">");
+        sb.append("<div class=\"card file\" data-path=\"").append(dataPath)
+          .append("\" data-name=\"").append(name)
+          .append("\" data-type=\"trash\" data-isdir=\"0\" data-ext=\"").append(ext)
+          .append("\" data-viewable=\"").append(viewable ? "1" : "0")
+          .append("\" data-textlike=\"").append(textlike ? "1" : "0")
+          .append("\" data-trash-id=\"").append(idEsc)
+          .append("\" data-trash-sub=\"").append(subEsc).append("\">");
         sb.append("<div class=\"icon\">").append(GridRenderer.iconFor(ext)).append("</div>");
         sb.append("<div class=\"name\" title=\"").append(name).append("\">").append(name).append("</div>");
         sb.append("<div class=\"meta\">").append(GridRenderer.humanSize(f.length())).append("</div>");
-        sb.append("</a>");
+        sb.append("</div>");
         return sb.toString();
     }
 

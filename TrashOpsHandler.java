@@ -24,16 +24,20 @@ public class TrashOpsHandler implements HttpHandler {
         String body = readAll(exchange.getRequestBody());
         String action = formParam(body, "action");
         String id = formParam(body, "id");
+        // Present only when restoring/deleting a single file or folder from
+        // *inside* a trashed folder rather than the whole trash entry - see
+        // TrashManager.restore/permanentlyDelete(id, sub).
+        String sub = formParam(body, "sub");
 
         try {
             switch (action == null ? "" : action) {
                 case "restore": {
-                    String restoredPath = TrashManager.restore(id);
+                    String restoredPath = TrashManager.restore(id, sub);
                     respondJson(exchange, true, "Restored to " + (restoredPath.isEmpty() ? "Home" : restoredPath));
                     return;
                 }
                 case "permanent-delete":
-                    TrashManager.permanentlyDelete(id);
+                    TrashManager.permanentlyDelete(id, sub);
                     respondJson(exchange, true, "Deleted permanently");
                     return;
                 case "empty":

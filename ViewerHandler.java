@@ -27,26 +27,54 @@ public class ViewerHandler implements HttpHandler {
     public void handle(HttpExchange exchange) throws IOException {
         String query = exchange.getRequestURI().getRawQuery();
         String relPath = QueryUtil.getParam(query, "path");
+        String trashId = QueryUtil.getParam(query, "trashId");
+        String trashSub = QueryUtil.getParam(query, "trashSub");
         relPath = relPath == null ? "" : URLDecoder.decode(relPath, "UTF-8");
+        trashId = trashId == null ? "" : URLDecoder.decode(trashId, "UTF-8");
+        trashSub = trashSub == null ? "" : URLDecoder.decode(trashSub, "UTF-8");
 
+        // Two mutually exclusive modes: the usual ROOT_DIR-relative "path",
+        // or "trashId"+"trashSub" for a file found while browsing inside a
+        // trashed folder (see TrashBrowseHandler) - those live outside
+        // ROOT_DIR entirely, under Config.TRASH_DIR, so they can't be
+        // reached via PathUtil.resolve().
+        boolean isTrash = !trashId.isEmpty();
+        TrashManager.Entry trashEntry = null;
         File file;
-        try {
-            file = PathUtil.resolve(relPath);
-        } catch (IOException e) {
-            sendText(exchange, 403, "Forbidden");
-            return;
+
+        if (isTrash) {
+            trashEntry = TrashManager.get(trashId);
+            if (trashEntry == null) {
+                sendText(exchange, 404, "That item is no longer in the trash.");
+                return;
+            }
+            File base = new File(Config.TRASH_DIR, trashEntry.trashedName);
+            try {
+                file = PathUtil.resolveWithinBase(base, trashSub);
+            } catch (IOException e) {
+                sendText(exchange, 403, "Forbidden");
+                return;
+            }
+        } else {
+            try {
+                file = PathUtil.resolve(relPath);
+            } catch (IOException e) {
+                sendText(exchange, 403, "Forbidden");
+                return;
+            }
         }
+
         if (!file.exists() || file.isDirectory()) {
             sendText(exchange, 404, "Not found");
             return;
         }
 
-        RecentActivity.recordView(relPath);
+        if (!isTrash) RecentActivity.recordView(relPath);
 
         String ext = GridRenderer.getExtension(file.getName()).toLowerCase();
         String html;
         try {
-            html = buildPage(file, relPath, ext);
+            html = isTrash ? buildTrashPage(file, trashEntry, trashSub, ext) : buildPage(file, relPath, ext);
         } catch (Exception e) {
             sendText(exchange, 500, "Couldn't open this file: " + e.getMessage());
             return;
@@ -89,6 +117,8 @@ public class ViewerHandler implements HttpHandler {
             sb.append("<a href='/viewer?path=").append(PathUtil.urlEncode(nextPath)).append("'>Next &rarr;</a>");
         }
         sb.append("</div></div>");
+        String prevHref = prevPath == null ? null : "/viewer?path=" + PathUtil.urlEncode(prevPath);
+        String nextHref = nextPath == null ? null : "/viewer?path=" + PathUtil.urlEncode(nextPath);
 
         sb.append("<div class='viewer-content'>");
         if (ext.equals("pdf")) {
@@ -115,7 +145,80 @@ public class ViewerHandler implements HttpHandler {
         }
         sb.append("</div>");
 
-        sb.append(viewerScript(prevPath, nextPath));
+        sb.append(viewerScript(prevHref, nextHref));
+        sb.append("</body></html>");
+        return sb.toString();
+    }
+
+    // Trash-browsing counterpart to buildPage() above: same reading view,
+    // but every link points at /trash-file and /viewer?trashId=... instead
+    // of /file and /viewer?path=..., since a file found via
+    // TrashBrowseHandler lives under Config.TRASH_DIR rather than
+    // ROOT_DIR. findNeighbors() itself is unchanged (it only cares about
+    // the real filesystem parent directory and reuses "sub" the same way
+    // it reuses "relPath" - just to build sibling paths, not to resolve
+    // anything), so no need for a separate trash-aware version.
+    private String buildTrashPage(File file, TrashManager.Entry entry, String sub, String ext) throws IOException {
+        String[] neighbors = findNeighbors(file, sub, ext);
+        String prevSub = neighbors[0];
+        String nextSub = neighbors[1];
+        String idEnc = PathUtil.urlEncode(entry.id);
+        String subEnc = PathUtil.urlEncode(sub);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("<!DOCTYPE html><html><head><meta charset='UTF-8'>");
+        sb.append("<meta name='viewport' content='width=device-width, initial-scale=1'>");
+        sb.append("<title>").append(PathUtil.htmlEscape(file.getName())).append(" (Trash)</title>");
+        sb.append(viewerStyles());
+        if (CodeLanguageUtil.shouldHighlight(ext) && !ext.equals("md")) {
+            sb.append(PageScripts.CODE_HIGHLIGHT_RESOURCES);
+        }
+        sb.append("</head><body class='viewer-body'>");
+
+        sb.append("<div class='viewer-topbar'>");
+        sb.append("<span class='viewer-filename'>").append(PathUtil.htmlEscape(file.getName()))
+          .append(" <span style='color:#999;font-weight:400;'>&middot; Recycle Bin (read-only)</span></span>");
+        sb.append("<div class='viewer-nav'>");
+        String prevHref = prevSub == null ? null : "/viewer?trashId=" + idEnc + "&trashSub=" + PathUtil.urlEncode(prevSub);
+        String nextHref = nextSub == null ? null : "/viewer?trashId=" + idEnc + "&trashSub=" + PathUtil.urlEncode(nextSub);
+        if (prevHref != null) {
+            sb.append("<a href='").append(prevHref).append("'>&larr; Previous</a>");
+        }
+        sb.append("<a href='/trash-file?id=").append(idEnc).append("&sub=").append(subEnc).append("&mode=download'>Download</a>");
+        if (ViewabilityUtil.isTextLike(file, ext) && !ext.equals("md") && CodeLanguageUtil.shouldHighlight(ext)) {
+            sb.append("<a href=\"#\" onclick=\"toggleCodeView(); return false;\" id='toggleRawBtn'>Show raw text</a>");
+        }
+        if (nextHref != null) {
+            sb.append("<a href='").append(nextHref).append("'>Next &rarr;</a>");
+        }
+        sb.append("</div></div>");
+
+        sb.append("<div class='viewer-content'>");
+        if (ext.equals("pdf")) {
+            sb.append("<iframe class='viewer-pdf-frame' src='/trash-file?id=").append(idEnc)
+              .append("&sub=").append(subEnc).append("&mode=view'></iframe>");
+        } else if (ViewabilityUtil.isTextLike(file, ext)) {
+            String content = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            String escaped = PathUtil.htmlEscape(content);
+            if (ext.equals("md")) {
+                sb.append("<div class='viewer-reading markdown-body'>").append(MarkdownLite.render(content)).append("</div>");
+            } else if (CodeLanguageUtil.shouldHighlight(ext)) {
+                String lang = CodeLanguageUtil.hljsLanguage(ext);
+                String langClass = lang.isEmpty() ? "" : " class=\"language-" + lang + "\"";
+                sb.append("<div class='viewer-reading code-viewer'>");
+                sb.append("<pre class='code-highlighted'><code id='codeBlock'").append(langClass).append(">").append(escaped).append("</code></pre>");
+                sb.append("<pre class='code-raw plain-text' style='display:none;'>").append(escaped).append("</pre>");
+                sb.append("</div>");
+            } else {
+                sb.append("<pre class='viewer-reading plain-text'>").append(escaped).append("</pre>");
+            }
+        } else {
+            sb.append("<div class='viewer-unsupported'><p>This file type doesn't have a dedicated reading view.</p>")
+              .append("<p><a href='/trash-file?id=").append(idEnc).append("&sub=").append(subEnc).append("&mode=download'>Download it instead</a></p></div>");
+        }
+        sb.append("</div>");
+
+        sb.append(viewerScript(prevHref, nextHref));
         sb.append("</body></html>");
         return sb.toString();
     }
@@ -177,9 +280,12 @@ public class ViewerHandler implements HttpHandler {
             "</style>";
     }
 
-    private String viewerScript(String prevPath, String nextPath) {
-        String prevJs = prevPath == null ? "null" : "'/viewer?path=" + PathUtil.urlEncode(prevPath) + "'";
-        String nextJs = nextPath == null ? "null" : "'/viewer?path=" + PathUtil.urlEncode(nextPath) + "'";
+    // prevHref/nextHref are already-complete URLs (either "/viewer?path="
+    // or "/viewer?trashId=...&trashSub=" - see buildPage/buildTrashPage
+    // above) so this one function covers the keyboard nav for both.
+    private String viewerScript(String prevHref, String nextHref) {
+        String prevJs = prevHref == null ? "null" : "'" + prevHref + "'";
+        String nextJs = nextHref == null ? "null" : "'" + nextHref + "'";
         return "<script>" +
             "var VIEWER_PREV=" + prevJs + ", VIEWER_NEXT=" + nextJs + ";" +
             "document.addEventListener('keydown', function(e){" +

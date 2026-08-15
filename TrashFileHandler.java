@@ -40,7 +40,7 @@ public class TrashFileHandler implements HttpHandler {
         File base = new File(Config.TRASH_DIR, entry.trashedName);
         File file;
         try {
-            file = resolveWithinBase(base, sub);
+            file = PathUtil.resolveWithinBase(base, sub);
         } catch (IOException e) {
             sendText(exchange, 403, "Forbidden");
             return;
@@ -64,19 +64,6 @@ public class TrashFileHandler implements HttpHandler {
             int n;
             while ((n = raf.read(buf)) != -1) os.write(buf, 0, n);
         }
-    }
-
-    private File resolveWithinBase(File base, String sub) throws IOException {
-        String cleaned = sub.replace("\\", "/");
-        while (cleaned.startsWith("/")) cleaned = cleaned.substring(1);
-
-        Path basePath = base.toPath().toAbsolutePath().normalize();
-        Path target = basePath.resolve(cleaned).normalize();
-
-        if (!target.equals(basePath) && !target.startsWith(basePath)) {
-            throw new IOException("Access outside the trashed folder is not allowed.");
-        }
-        return target.toFile();
     }
 
     private void sendText(HttpExchange exchange, int code, String msg) throws IOException {

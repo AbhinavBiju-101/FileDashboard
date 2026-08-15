@@ -221,6 +221,7 @@ public class ShellScript {
         // whichever ones match. Works whether the input ends in a slash
         // (show everything in that folder) or not (filter-as-you-type).
         "var addressSuggestDebounce=null;" +
+        "var addressActiveIndex=-1;" +
         "function updateAddressSuggestions(){" +
           "clearTimeout(addressSuggestDebounce);" +
           "addressSuggestDebounce=setTimeout(function(){" +
@@ -238,6 +239,7 @@ public class ShellScript {
         "}" +
         "function renderAddressSuggestions(folders, dirPart){" +
           "var box=document.getElementById('addressBarSuggestions');" +
+          "addressActiveIndex=-1;" +
           "if(!folders.length){ box.innerHTML=''; box.classList.remove('open'); return; }" +
           "box.innerHTML=folders.map(function(f){" +
             "var full=dirPart?dirPart+'/'+f.name:f.name;" +
@@ -245,6 +247,13 @@ public class ShellScript {
             "return '<div class=\"address-suggestion-item\" data-address-path=\"'+p+'\">&#128193; '+f.name+'</div>';" +
           "}).join('');" +
           "box.classList.add('open');" +
+        "}" +
+        // Highlights whichever suggestion Up/Down has landed on and keeps
+        // it scrolled into view, so navigating a long folder list by
+        // keyboard behaves like any native dropdown/autocomplete.
+        "function updateAddressActiveHighlight(items){" +
+          "items.forEach(function(it,i){ it.classList.toggle('active', i===addressActiveIndex); });" +
+          "if(items[addressActiveIndex]) items[addressActiveIndex].scrollIntoView({block:'nearest'});" +
         "}" +
 
         "document.addEventListener('keydown', function(e){" +
@@ -254,8 +263,16 @@ public class ShellScript {
           "}" +
         "});" +
         "document.getElementById('addressBarInput') && document.getElementById('addressBarInput').addEventListener('keydown', function(e){" +
-          "if(e.key==='Enter'){ goToAddressBarPath(); }" +
-          "else if(e.key==='Escape'){ closeAddressBar(); }" +
+          "var box=document.getElementById('addressBarSuggestions');" +
+          "var items=box.classList.contains('open')?Array.prototype.slice.call(box.querySelectorAll('.address-suggestion-item')):[];" +
+          "if(e.key==='ArrowDown'){" +
+            "if(items.length){ e.preventDefault(); addressActiveIndex=(addressActiveIndex+1)%items.length; updateAddressActiveHighlight(items); }" +
+          "}else if(e.key==='ArrowUp'){" +
+            "if(items.length){ e.preventDefault(); addressActiveIndex=(addressActiveIndex-1+items.length)%items.length; updateAddressActiveHighlight(items); }" +
+          "}else if(e.key==='Enter'){" +
+            "if(items.length && addressActiveIndex>-1){ e.preventDefault(); items[addressActiveIndex].click(); }" +
+            "else{ goToAddressBarPath(); }" +
+          "}else if(e.key==='Escape'){ closeAddressBar(); }" +
           "e.stopPropagation();" +
         "});" +
         "document.getElementById('addressBarInput') && document.getElementById('addressBarInput').addEventListener('input', function(){" +
