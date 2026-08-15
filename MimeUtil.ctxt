@@ -1,0 +1,7 @@
+#BlueJ class context
+#Thu Jul 30 18:16:17 IST 2026
+comment0.target=MimeUtil
+comment0.text=\r\n Files.probeContentType() is inconsistent across OSes - it often returns\r\n null for perfectly ordinary text/code files (.md, .java, .log, ...),\r\n which used to make FileViewHandler fall back to\r\n "application/octet-stream" and silently trigger a download instead of an\r\n inline view. This fills those gaps with a small manual table before\r\n giving up.\r\n
+comment1.params=file
+comment1.target=java.lang.String resolve(java.io.File)
+numComments=2

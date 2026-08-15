@@ -1,5 +1,5 @@
 #BlueJ class context
-#Tue Jul 28 20:58:32 IST 2026
+#Thu Jul 30 18:16:17 IST 2026
 comment0.target=LiveUpdateHandler
 comment0.text=\r\n Serves "/events?path\=..." as a Server-Sent Events stream. As long as the\r\n browser tab is open, this watches the given folder with a WatchService and\r\n pushes a "refresh" message whenever a file is added, removed, or changed -\r\n so the dashboard grid can auto-refresh without the person hitting reload.\r\n\r\n One long-lived connection \= one WatchService \= one handler thread, which is\r\n why FileServer uses a real thread pool executor instead of the default.\r\n
 comment1.params=exchange

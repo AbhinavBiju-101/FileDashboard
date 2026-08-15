@@ -1,0 +1,7 @@
+#BlueJ class context
+#Thu Jul 30 18:16:17 IST 2026
+comment0.target=ViewabilityUtil
+comment0.text=\r\n Decides whether a file type is something a browser can actually render\r\n inline (image, pdf, text, audio, video) versus something it would just\r\n dump as raw bytes (docx, xlsx, zip, exe, unknown extensions, etc.).\r\n\r\n This exists specifically so the "View" button never lands someone on a\r\n page of garbage bytes - if a type isn't in here, they get a clear\r\n "no preview available" message with a Download option instead.\r\n
+comment1.params=extensionLowercase
+comment1.target=boolean isViewable(java.lang.String)
+numComments=2

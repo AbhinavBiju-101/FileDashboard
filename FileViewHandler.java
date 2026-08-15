@@ -6,16 +6,19 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.RandomAccessFile;
 import java.net.URLDecoder;
-import java.nio.file.Files;
+import java.nio.charset.StandardCharsets;
 
 /**
- * Serves "/file?path=...&mode=view|download".
- * mode=view streams the file inline (browser renders images/PDFs/text/video directly).
- * mode=download forces a Save As via Content-Disposition: attachment.
+ * Serves "/file?path=...&mode=view|download|preview".
  *
- * Supports HTTP Range requests (RFC 7233), which is what lets a browser:
- *  - seek/scrub within an audio or video file instead of only playing from byte 0
- *  - resume an interrupted download instead of restarting it
+ * mode=view     streams the file inline (browser renders images/PDFs/text/video directly).
+ * mode=download forces a Save As via Content-Disposition: attachment.
+ * mode=preview  used for file types the browser can't render (docx, zip, etc.) -
+ *               shows a small "no preview available" page with a Download button,
+ *               instead of letting the browser dump raw bytes as a garbled "file".
+ *
+ * Also supports HTTP Range requests (RFC 7233) for view/download, which is what
+ * lets a browser seek/scrub within audio or video, and resume interrupted downloads.
  */
 public class FileViewHandler implements HttpHandler {
 
@@ -42,9 +45,19 @@ public class FileViewHandler implements HttpHandler {
             return;
         }
 
+        if ("preview".equals(mode)) {
+            sendPreviewPage(exchange, file, relPath);
+            return;
+        }
+
+        if ("download".equals(mode)) {
+            RecentActivity.recordDownload(relPath);
+        } else {
+            RecentActivity.recordView(relPath);
+        }
+
         long fileLength = file.length();
-        String contentType = Files.probeContentType(file.toPath());
-        if (contentType == null) contentType = "application/octet-stream";
+        String contentType = MimeUtil.resolve(file);
 
         exchange.getResponseHeaders().set("Content-Type", contentType);
         exchange.getResponseHeaders().set("Accept-Ranges", "bytes");
@@ -57,6 +70,34 @@ public class FileViewHandler implements HttpHandler {
             servePartial(exchange, file, fileLength, rangeHeader);
         } else {
             serveFull(exchange, file, fileLength);
+        }
+    }
+
+    private void sendPreviewPage(HttpExchange exchange, File file, String relPath) throws IOException {
+        String ext = GridRenderer.getExtension(file.getName());
+        String name = PathUtil.htmlEscape(file.getName());
+        String size = GridRenderer.humanSize(file.length());
+
+        String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>" +
+            "<meta name='viewport' content='width=device-width, initial-scale=1'>" +
+            "<title>" + name + "</title>" + Styles.CSS +
+            "</head><body>" +
+            "<div style='max-width:480px;margin:80px auto;text-align:center;font-family:-apple-system,Segoe UI,Roboto,sans-serif;'>" +
+            "<div style='font-size:56px;'>" + GridRenderer.iconFor(ext.toLowerCase()) + "</div>" +
+            "<h2 style='margin:12px 0 4px;'>" + name + "</h2>" +
+            "<p style='color:#888;font-size:13px;margin-top:0;'>" + size + "</p>" +
+            "<p style='color:#555;'>There's no in-browser preview for <strong>." +
+            PathUtil.htmlEscape(ext) + "</strong> files.</p>" +
+            "<p><a href='/file?path=" + PathUtil.urlEncode(relPath) + "&mode=download' " +
+            "style='display:inline-block;background:#2563eb;color:#fff;padding:10px 20px;" +
+            "border-radius:6px;text-decoration:none;font-size:14px;'>Download instead</a></p>" +
+            "</div></body></html>";
+
+        byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
+        exchange.sendResponseHeaders(200, bytes.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(bytes);
         }
     }
 

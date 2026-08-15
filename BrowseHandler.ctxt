@@ -1,7 +1,7 @@
 #BlueJ class context
-#Tue Jul 28 20:58:32 IST 2026
-comment0.target=DashboardHandler
-comment0.text=\r\n Serves the "/" route\: a grid view of whatever folder is requested\r\n via ?path\=... (relative to Config.ROOT_DIR), with sorting, search,\r\n whole-folder zip download, and a live auto-refresh connection.\r\n
+#Thu Jul 30 18:16:17 IST 2026
+comment0.target=BrowseHandler
+comment0.text=\r\n Serves "/browse?path\=..."\: a grid view of whatever folder is requested,\r\n relative to Config.ROOT_DIR (the user's home directory), with sorting,\r\n search, whole-folder zip download, and a live auto-refresh connection.\r\n
 comment1.params=exchange
 comment1.target=void handle(com.sun.net.httpserver.HttpExchange)
 comment2.params=dir relPath sort order

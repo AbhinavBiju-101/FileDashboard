@@ -1,0 +1,9 @@
+#BlueJ class context
+#Thu Jul 30 18:16:17 IST 2026
+comment0.target=HiddenFileUtil
+comment0.text=\r\n Detects hidden files/folders (dotfiles) so they can be excluded from\r\n directory listings, search results, and zip downloads - most importantly\r\n so Config.DATA_DIR (".filedashboard", which lives inside the home folder\r\n that's now the browse root) never shows up or gets touched through the UI.\r\n
+comment1.params=name
+comment1.target=boolean isHiddenName(java.lang.String)
+comment2.params=base p
+comment2.target=boolean isHiddenPath(java.nio.file.Path, java.nio.file.Path)
+numComments=3

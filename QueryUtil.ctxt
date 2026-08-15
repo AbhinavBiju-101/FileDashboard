@@ -1,5 +1,5 @@
 #BlueJ class context
-#Tue Jul 28 20:56:34 IST 2026
+#Thu Jul 30 18:16:17 IST 2026
 comment0.target=QueryUtil
 comment0.text=\r\n Tiny helper shared by handlers to pull a value out of a raw query string,\r\n e.g. "path\=Photos%2F2024&mode\=view".\r\n
 comment1.params=query key

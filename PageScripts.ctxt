@@ -1,0 +1,5 @@
+#BlueJ class context
+#Thu Jul 30 18:16:17 IST 2026
+comment0.target=PageScripts
+comment0.text=\r\n Everything client-side that's shared across content pages (Dashboard,\r\n Browse, Search)\: the in-app preview modal (images/PDF/text/audio/video,\r\n Google-Drive style, instead of leaving the page) and the rename/duplicate/\r\n delete actions on each card. Included once per page via MODAL_HTML + SCRIPT.\r\n
+numComments=1

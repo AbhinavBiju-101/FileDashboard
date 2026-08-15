@@ -1,0 +1,30 @@
+#BlueJ class context
+#Thu Jul 30 18:16:17 IST 2026
+comment0.target=RecentActivity
+comment0.text=\r\n Tracks activity for the home dashboard\: recently viewed files, recently\r\n downloaded files, and how often each folder gets browsed - persisted to\r\n a small JSON file (Config.DATA_DIR/activity.json) so it survives restarts.\r\n\r\n recentViewed/recentDownloaded use access-ordered LinkedHashMaps as a cheap\r\n MRU (most-recently-used) cache\: re-opening a file just moves it back to\r\n the front instead of creating a duplicate entry. Every mutation triggers\r\n a write-through save; for a personal local tool the request volume is low\r\n enough that this is simpler and safer than batching writes.\r\n
+comment1.params=eldest
+comment1.target=boolean removeEldestEntry(java.util.Map.Entry)
+comment10.target=java.util.List getAllKnownPaths()
+comment11.params=map
+comment11.target=java.util.List reversedSnapshot(java.util.Map)
+comment12.target=void save()
+comment13.params=sb map
+comment13.target=void appendEntries(java.lang.StringBuilder, java.util.Map)
+comment14.target=void load()
+comment15.params=arrObj target
+comment15.target=void loadEntries(java.lang.Object, java.util.Map)
+comment2.params=eldest
+comment2.target=boolean removeEldestEntry(java.util.Map.Entry)
+comment3.params=relPath
+comment3.target=void recordView(java.lang.String)
+comment4.params=relPath
+comment4.target=void recordDownload(java.lang.String)
+comment5.params=relPath
+comment5.target=void recordFolderVisit(java.lang.String)
+comment6.params=relPath
+comment6.target=void forgetPath(java.lang.String)
+comment7.target=java.util.List getRecentViewed()
+comment8.target=java.util.List getRecentDownloaded()
+comment9.params=limit
+comment9.target=java.util.List getFrequentFolders(int)
+numComments=16

@@ -44,7 +44,9 @@ public class ZipDownloadHandler implements HttpHandler {
         Path base = dir.toPath();
         try (OutputStream os = exchange.getResponseBody();
              ZipOutputStream zos = new ZipOutputStream(os)) {
-            Files.walk(base).filter(Files::isRegularFile).forEach(p -> {
+            Files.walk(base).filter(Files::isRegularFile)
+                .filter(p -> !HiddenFileUtil.isHiddenPath(base, p))
+                .forEach(p -> {
                 try {
                     String entryName = base.relativize(p).toString().replace(File.separatorChar, '/');
                     zos.putNextEntry(new ZipEntry(entryName));

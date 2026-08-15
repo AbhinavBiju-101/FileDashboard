@@ -1,0 +1,25 @@
+#BlueJ class context
+#Thu Jul 30 18:16:17 IST 2026
+comment0.target=FileOpsHandler
+comment0.text=\r\n Handles "POST /fileops" with a form-encoded body\: action\=rename|duplicate|delete,\r\n path\=<relative path>, and (for rename) newName\=<new file/folder name>.\r\n Responds with a small JSON object\: {"success"\: true/false, "message"\: "..."}.\r\n
+comment1.params=exchange
+comment1.target=void handle(com.sun.net.httpserver.HttpExchange)
+comment10.params=exchange success message
+comment10.target=void respondJson(com.sun.net.httpserver.HttpExchange, boolean, java.lang.String)
+comment2.params=target relPath newName
+comment2.target=java.lang.String handleRename(java.io.File, java.lang.String, java.lang.String)
+comment3.params=target
+comment3.target=java.lang.String handleDuplicate(java.io.File)
+comment4.params=target relPath
+comment4.target=java.lang.String handleDelete(java.io.File, java.lang.String)
+comment5.params=parent originalName
+comment5.target=java.lang.String generateCopyName(java.io.File, java.lang.String)
+comment6.params=src dest
+comment6.target=void copyDirectoryRecursively(java.nio.file.Path, java.nio.file.Path)
+comment7.params=root
+comment7.target=void deleteRecursively(java.nio.file.Path)
+comment8.params=body key
+comment8.target=java.lang.String formParam(java.lang.String, java.lang.String)
+comment9.params=is
+comment9.target=java.lang.String readAll(java.io.InputStream)
+numComments=11

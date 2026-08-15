@@ -1,5 +1,5 @@
 #BlueJ class context
-#Tue Jul 28 20:58:32 IST 2026
+#Thu Jul 30 18:16:17 IST 2026
 comment0.target=ZipDownloadHandler
 comment0.text=\r\n Serves "/zip?path\=..." - streams the requested folder (and everything\r\n inside it, recursively) as a single .zip file. Nothing is written to a\r\n temp file first; entries are compressed straight into the HTTP response as\r\n they're read, so this works for large folders without excess memory or disk use.\r\n
 comment1.params=exchange

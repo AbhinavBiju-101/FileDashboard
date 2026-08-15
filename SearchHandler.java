@@ -46,6 +46,7 @@ public class SearchHandler implements HttpHandler {
             String needle = q.toLowerCase();
             try (Stream<Path> walk = Files.walk(startDir.toPath())) {
                 walk.filter(Files::isRegularFile)
+                    .filter(p -> !HiddenFileUtil.isHiddenPath(startDir.toPath(), p))
                     .filter(p -> p.getFileName().toString().toLowerCase().contains(needle))
                     .limit(MAX_RESULTS)
                     .forEach(p -> matches.add(p.toFile()));
@@ -65,12 +66,14 @@ public class SearchHandler implements HttpHandler {
         StringBuilder sb = new StringBuilder();
         sb.append("<!DOCTYPE html><html><head><meta charset='UTF-8'>");
         sb.append("<meta name='viewport' content='width=device-width, initial-scale=1'>");
-        sb.append("<title>Search results</title>");
+        String tabTitle = q.isEmpty() ? "Search" : "Search: " + q;
+        sb.append("<title>").append(PathUtil.htmlEscape(tabTitle)).append("</title>");
         sb.append(Styles.CSS);
         sb.append("</head><body>");
+        sb.append("<div class='page-content'>");
 
-        sb.append("<div class='topbar'><h1>Search results</h1>");
-        sb.append("<div class='breadcrumb'><a href='/?path=").append(PathUtil.urlEncode(relPath)).append("'>&larr; Back to folder</a></div>");
+        sb.append("<div class='topbar'><a class='brand-link' href='/dashboard' onclick=\"if(parent&&parent.openTab){ parent.openTab('/dashboard','Dashboard'); return false; }\"><h1>File Dashboard</h1></a>");
+        sb.append("<div class='breadcrumb'><a href='/browse?path=").append(PathUtil.urlEncode(relPath)).append("'>&larr; Back to folder</a></div>");
         sb.append("</div>");
 
         sb.append("<form class='upload-form' method='GET' action='/search'>")
@@ -93,6 +96,9 @@ public class SearchHandler implements HttpHandler {
         if (matches.isEmpty() && !q.isEmpty()) {
             sb.append("<p class='empty'>No files matched.</p>");
         }
+        sb.append("</div>");
+        sb.append(PageScripts.MODAL_HTML);
+        sb.append(PageScripts.SCRIPT);
         sb.append("</div></body></html>");
         return sb.toString();
     }

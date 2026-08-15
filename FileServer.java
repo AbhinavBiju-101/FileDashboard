@@ -28,13 +28,17 @@ public class FileServer {
         // their own threads to avoid getting stuck behind it.
         server.setExecutor(Executors.newCachedThreadPool());
 
-        addContext(server, "/", new DashboardHandler());
+        addContext(server, "/", new AppShellHandler());
+        addContext(server, "/dashboard", new HomeHandler());
+        addContext(server, "/browse", new BrowseHandler());
         addContext(server, "/file", new FileViewHandler());
         addContext(server, "/thumbnail", new ThumbnailHandler());
         addContext(server, "/upload", new UploadHandler());
         addContext(server, "/search", new SearchHandler());
+        addContext(server, "/suggest", new SuggestHandler());
         addContext(server, "/zip", new ZipDownloadHandler());
         addContext(server, "/events", new LiveUpdateHandler());
+        addContext(server, "/fileops", new FileOpsHandler());
 
         server.start();
 

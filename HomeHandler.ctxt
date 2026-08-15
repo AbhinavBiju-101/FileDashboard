@@ -1,0 +1,13 @@
+#BlueJ class context
+#Thu Jul 30 18:16:17 IST 2026
+comment0.target=HomeHandler
+comment0.text=\r\n Serves "/dashboard" - the landing dashboard. This is deliberately separate\r\n from the folder browser at "/browse"\: it's a quick-launch surface\r\n (recently opened files, recently downloaded files, frequently visited\r\n folders), not a directory listing. It's loaded as a tab inside the app\r\n shell ("/") rather than being the shell itself.\r\n
+comment1.params=exchange
+comment1.target=void handle(com.sun.net.httpserver.HttpExchange)
+comment2.target=java.lang.String buildPage()
+comment3.params=title relPaths
+comment3.target=java.lang.String fileSection(java.lang.String, java.util.List)
+comment4.target=java.lang.String frequentFoldersSection()
+comment5.params=rel
+comment5.target=java.lang.String parentLabel(java.lang.String)
+numComments=6

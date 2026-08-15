@@ -58,7 +58,7 @@ public class UploadHandler implements HttpHandler {
             fos.write(part.data);
         }
 
-        exchange.getResponseHeaders().set("Location", "/?path=" + PathUtil.urlEncode(relPath));
+        exchange.getResponseHeaders().set("Location", "/browse?path=" + PathUtil.urlEncode(relPath));
         exchange.sendResponseHeaders(303, -1);
         exchange.close();
     }
