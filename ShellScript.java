@@ -74,17 +74,32 @@ public class ShellScript {
         "var HEARTBEAT_STALE_MS=10000;" +
         "var shellSessionId=null;" +
         "var shellHeartbeatTimer=null;" +
-        // A fixed, well-known session id for the specialized "Google Drive"
-        // session (see SessionsHandler.java's pinned row). Using a fixed id
-        // rather than one shellGenerateSessionId() would produce means it
-        // can be opened even before it's ever been saved once, by
-        // synthesizing a default entry for it in shellLoadSession() below.
-        // Its root is always Drive's "My Drive", never any local folder -
-        // shellApplyDriveSidebar() is what makes the pinned sidebar reflect
-        // that (swapping the classic OS-folder shortcuts for "Home
-        // folders"/"Home files" against Drive instead) whenever this is the
-        // session open in this browser tab.
+        // Legacy fixed id a single, singleton "Google Drive" session used
+        // to always have, back when only one could ever exist. Kept around
+        // purely so anyone with that old entry still sitting in their
+        // localStorage keeps working (see shellSessionEntryIsDrive() and
+        // shellLoadSession() below) - new Drive sessions no longer use a
+        // fixed id at all; they're minted with shellGenerateSessionId()
+        // like any other session, via shellCreateDriveSession(), so any
+        // number of them can coexist side by side with normal ones.
         "var GDRIVE_SESSION_ID='session-gdrive';" +
+        // Whether the session THIS browser tab currently has open is one of
+        // the (now potentially many) Google Drive sessions - set whenever a
+        // session is loaded/initialized (shellLoadState(), shellLoadSession(),
+        // shellHandleForcedClose()) from shellSessionEntryIsDrive(), and read
+        // everywhere the app used to compare shellSessionId against the old
+        // singleton GDRIVE_SESSION_ID directly. Its root is always Drive's
+        // "My Drive", never any local folder - shellApplyDriveSidebar() is
+        // what makes the pinned sidebar reflect that (swapping the classic
+        // OS-folder shortcuts for \"Home folders\"/\"Home files\" against
+        // Drive instead) whenever this is true.
+        "var shellSessionIsDrive=false;" +
+        // A session entry counts as a Drive session either by its own
+        // explicit drive:true flag (every session minted by
+        // shellCreateDriveSession() below) or, for backward compatibility,
+        // by having the old fixed singleton id.
+        "function shellSessionEntryIsDrive(s){ return !!(s && (s.drive || s.id===GDRIVE_SESSION_ID)); }" +
+        "var DRIVE_ICON_SRC='" + DriveIcon.DATA_URI + "';" +
 
         "function fdFormatDate(ts){" +
           "var d=new Date(ts);" +
@@ -168,7 +183,7 @@ public class ShellScript {
           "try{" +
             "var sessions=shellLoadSessionsMap();" +
             "var existing=sessions[shellSessionId];" +
-            "var isNamed=(shellSessionId===GDRIVE_SESSION_ID)||!!(existing&&existing.named);" +
+            "var isNamed=shellSessionIsDrive||!!(existing&&existing.named);" +
             "if(!isNamed && shellSessionHasOnlyUselessTabs()){" +
               // Nothing worth keeping (yet) - if an earlier, since-emptied
               // version of this session had been persisted, drop it too,
@@ -180,8 +195,9 @@ public class ShellScript {
             "}" +
             "sessions[shellSessionId]={" +
               "id:shellSessionId," +
-              "name:(existing&&existing.name)||('Session '+fdFormatDate(Date.now()))," +
+              "name:(existing&&existing.name)||(shellSessionIsDrive?'Google Drive':('Session '+fdFormatDate(Date.now())))," +
               "named:!!(existing&&existing.named)," +
+              "drive:shellSessionIsDrive," +
               "tabs:shellTabs," +
               "active:shellActiveTabId," +
               "groups:shellGroups," +
@@ -202,7 +218,7 @@ public class ShellScript {
         "function shellUpdateUnsavedBadge(){" +
           "var badge=document.getElementById('shellUnsavedBadge');" +
           "if(!badge) return;" +
-          "if(shellSessionId===GDRIVE_SESSION_ID){ badge.style.display='none'; return; }" +
+          "if(shellSessionIsDrive){ badge.style.display='none'; return; }" +
           "var sessions=shellLoadSessionsMap();" +
           "var existing=sessions[shellSessionId];" +
           "var isNamed=!!(existing&&existing.named);" +
@@ -225,9 +241,9 @@ public class ShellScript {
         // feature, not two different ones that happen to do the same
         // thing).
         "function shellSessionDisplayName(){" +
-          "if(shellSessionId===GDRIVE_SESSION_ID) return 'Google Drive';" +
           "var existing=shellLoadSessionsMap()[shellSessionId];" +
-          "return (existing&&existing.name)||'Unnamed session';" +
+          "if(existing&&existing.name) return existing.name;" +
+          "return shellSessionIsDrive?'Google Drive':'Unnamed session';" +
         "}" +
         "function shellUpdateSessionSwitcher(){" +
           "var dot=document.getElementById('sidebarSessionDot');" +
@@ -235,8 +251,8 @@ public class ShellScript {
           "if(!dot||!nameEl) return;" +
           "nameEl.textContent=shellSessionDisplayName();" +
           "var existing=shellLoadSessionsMap()[shellSessionId];" +
-          "var isNamed=(shellSessionId===GDRIVE_SESSION_ID)||!!(existing&&existing.named);" +
-          "dot.className='sidebar-session-dot'+(shellSessionId===GDRIVE_SESSION_ID?' drive':(!isNamed?' unsaved':''));" +
+          "var isNamed=shellSessionIsDrive||!!(existing&&existing.named);" +
+          "dot.className='sidebar-session-dot'+(shellSessionIsDrive?' drive':(!isNamed?' unsaved':''));" +
         "}" +
         "function shellToggleSessionMenu(e){" +
           "e.stopPropagation();" +
@@ -263,31 +279,31 @@ public class ShellScript {
         "function shellRenderSessionMenu(){" +
           "var menu=document.getElementById('sidebarSessionMenu');" +
           "var sessions=Object.assign({}, shellLoadSessionsMap());" +
-          "if(!sessions[GDRIVE_SESSION_ID]){ sessions[GDRIVE_SESSION_ID]={id:GDRIVE_SESSION_ID,name:'Google Drive',tabs:[],groups:[],createdAt:0,updatedAt:0}; }" +
-          "if(!sessions[shellSessionId]){ sessions[shellSessionId]={id:shellSessionId,name:'',tabs:shellTabs,groups:shellGroups,createdAt:0,updatedAt:0}; }" +
+          "if(!sessions[shellSessionId]){ sessions[shellSessionId]={id:shellSessionId,name:'',tabs:shellTabs,groups:shellGroups,drive:shellSessionIsDrive,createdAt:0,updatedAt:0}; }" +
           "var ids=Object.keys(sessions);" +
           "ids.sort(function(a,b){" +
-            "if(a===GDRIVE_SESSION_ID) return -1;" +
-            "if(b===GDRIVE_SESSION_ID) return 1;" +
             "if(a===shellSessionId) return -1;" +
             "if(b===shellSessionId) return 1;" +
             "return (sessions[b].updatedAt||0)-(sessions[a].updatedAt||0);" +
           "});" +
           "var rows=ids.map(function(id){" +
             "var s=sessions[id];" +
+            "var isDriveEntry=shellSessionEntryIsDrive(s);" +
             "var isMine=(id===shellSessionId);" +
             "var activeElsewhere=!isMine && shellIsSessionActive(id);" +
-            "var name=shellEscapeHtml(s.name||'Unnamed session');" +
+            "var name=shellEscapeHtml(s.name||(isDriveEntry?'Google Drive':'Unnamed session'));" +
             "var badges='';" +
             "if(activeElsewhere){ badges+=\"<span class='sidebar-session-menu-badge elsewhere'>Open elsewhere</span>\"; }" +
-            "if(id!==GDRIVE_SESSION_ID && !s.named){ badges+=\"<span class='sidebar-session-menu-badge unsaved'>Unsaved</span>\"; }" +
+            "if(!isDriveEntry && !s.named){ badges+=\"<span class='sidebar-session-menu-badge unsaved'>Unsaved</span>\"; }" +
             "var tabCount=(s.tabs||[]).length;" +
+            "var icon=isDriveEntry?\"<img class='sidebar-session-menu-icon' src='\"+DRIVE_ICON_SRC+\"' width='14' height='14' alt=''>\":'';" +
             "return \"<div class='sidebar-session-menu-item\"+(isMine?' current':'')+\"' data-session-id='\"+id+\"' title='\"+tabCount+\" tab\"+(tabCount===1?'':'s')+(isMine?' - this tab':'')+\"'>\" +" +
-              "\"<span class='sidebar-session-menu-name'>\"+name+(isMine?' (this tab)':'')+\"</span>\"+badges+" +
+              "icon+\"<span class='sidebar-session-menu-name'>\"+name+(isMine?' (this tab)':'')+\"</span>\"+badges+" +
             "\"</div>\";" +
           "}).join('');" +
           "rows+=\"<div class='sidebar-session-menu-divider'></div>\";" +
           "rows+=\"<div class='sidebar-session-menu-item sidebar-session-menu-action' data-session-action='new'>+ New session</div>\";" +
+          "rows+=\"<div class='sidebar-session-menu-item sidebar-session-menu-action' data-session-action='new-drive'>+ New Google Drive session</div>\";" +
           "rows+=\"<div class='sidebar-session-menu-item sidebar-session-menu-action' data-session-action='manage'>Manage sessions...</div>\";" +
           "menu.innerHTML=rows;" +
         "}" +
@@ -296,6 +312,7 @@ public class ShellScript {
           "if(actionItem){" +
             "shellCloseSessionMenu();" +
             "if(actionItem.dataset.sessionAction==='new'){ shellHandleForcedClose(); }" +
+            "else if(actionItem.dataset.sessionAction==='new-drive'){ shellCreateDriveSession(); }" +
             "else if(actionItem.dataset.sessionAction==='manage'){ navigateCurrentTab('/sessions'); }" +
             "return;" +
           "}" +
@@ -340,7 +357,7 @@ public class ShellScript {
         // last line of defense, since the badge only helps if it's been
         // noticed before the tab gets closed.
         "window.addEventListener('beforeunload', function(e){" +
-          "if(shellSessionId===GDRIVE_SESSION_ID) return;" +
+          "if(shellSessionIsDrive) return;" +
           "var sessions=shellLoadSessionsMap();" +
           "var existing=sessions[shellSessionId];" +
           "if(existing && existing.named) return;" +
@@ -359,6 +376,7 @@ public class ShellScript {
             "var sessions=shellLoadSessionsMap();" +
             "var s=sessions[shellSessionId];" +
             "if(!s||!s.tabs||!s.tabs.length) return false;" +
+            "shellSessionIsDrive=shellSessionEntryIsDrive(s);" +
             "shellGroups=s.groups||[];" +
             "shellGroupCounter=shellGroups.reduce(function(m,g){" +
               "var n=parseInt(g.id.replace('group-',''),10); return isNaN(n)?m:Math.max(m,n);" +
@@ -425,7 +443,7 @@ public class ShellScript {
           "var sessions=shellLoadSessionsMap();" +
           "var s=sessions[targetId];" +
           "if(!s && targetId===GDRIVE_SESSION_ID){" +
-            "s={id:GDRIVE_SESSION_ID, name:'Google Drive', tabs:[{id:'tab-gdrive-1', url:'/gdrive?path=', title:'Google Drive', groupId:null}], groups:[], active:'tab-gdrive-1'};" +
+            "s={id:GDRIVE_SESSION_ID, name:'Google Drive', drive:true, tabs:[{id:'tab-gdrive-1', url:'/gdrive?path=', title:'Google Drive', groupId:null}], groups:[], active:'tab-gdrive-1'};" +
           "}" +
           "if(!s){ alert('That session no longer exists.'); return false; }" +
 
@@ -439,7 +457,8 @@ public class ShellScript {
 
           "shellSessionId=targetId;" +
           "try{ sessionStorage.setItem(SESSION_ID_KEY, shellSessionId); }catch(e){}" +
-          "shellApplyDriveSidebar(shellSessionId===GDRIVE_SESSION_ID);" +
+          "shellSessionIsDrive=shellSessionEntryIsDrive(s);" +
+          "shellApplyDriveSidebar(shellSessionIsDrive);" +
           "shellGroups=s.groups||[];" +
           "shellGroupCounter=shellGroups.reduce(function(m,g){" +
             "var n=parseInt(g.id.replace('group-',''),10); return isNaN(n)?m:Math.max(m,n);" +
@@ -476,6 +495,7 @@ public class ShellScript {
           "shellTeardownCurrentTabs();" +
           "shellSessionId=shellGenerateSessionId();" +
           "try{ sessionStorage.setItem(SESSION_ID_KEY, shellSessionId); }catch(e){}" +
+          "shellSessionIsDrive=false;" +
           "shellApplyDriveSidebar(false);" +
           "shellGroups=[]; shellGroupCounter=0; shellTabs=[]; shellTabCounter=0;" +
           "openTab('/dashboard','Dashboard');" +
@@ -489,11 +509,51 @@ public class ShellScript {
         "}" +
         "window.addEventListener('pagehide', shellReleaseHeartbeat);" +
 
-        "function openTab(url, fallbackLabel){" +
+        // Mints a brand-new, independent Google Drive session - unlike the
+        // old singleton (fixed GDRIVE_SESSION_ID, exactly one could ever
+        // exist), this generates a normal session id the same way any other
+        // new session gets one, just pre-populated with a Drive tab and
+        // marked drive:true so it opens straight into "My Drive" and puts
+        // the sidebar in Drive mode. Saved to storage immediately (rather
+        // than left to shellSaveState()'s lazy "only once it has real
+        // content" rule) since it already has real content: a live Drive
+        // tab. Called from the Sessions page's "+ New Google Drive session"
+        // button and the sidebar switcher's matching menu action - both via
+        // window.parent.shellCreateDriveSession().
+        "function shellCreateDriveSession(){" +
+          "var id=shellGenerateSessionId();" +
+          "var tabId='tab-'+(++shellTabCounter);" +
+          "var sessions=shellLoadSessionsMap();" +
+          "sessions[id]={" +
+            "id:id, name:'Google Drive', named:false, drive:true," +
+            "tabs:[{id:tabId, url:'/gdrive?path=', title:'Google Drive', groupId:null}]," +
+            "groups:[], active:tabId, createdAt:Date.now(), updatedAt:Date.now()" +
+          "};" +
+          "shellSaveSessionsMap(sessions);" +
+          "shellLoadSession(id, true);" +
+          "return id;" +
+        "}" +
+
+        // inheritGroup (optional): when true and the tab initiating this
+        // call (shellActiveTabId - always the visible/interactable tab, so
+        // it's a reliable stand-in for "which tab asked for this") belongs
+        // to a group, the new tab joins that same group instead of landing
+        // outside every group by default. Used by "Open in Viewer" links
+        // (local and Google Drive) so opening a reading view from a tab
+        // that's already inside a group keeps it there rather than
+        // scattering it loose in the bar. Left false for everything else
+        // (the "+" button, restoring the dashboard, etc.) so those keep
+        // their existing outside-any-group behavior.
+        "function openTab(url, fallbackLabel, inheritGroup){" +
           "var existing=shellTabs.find(function(t){ return t.url===url; });" +
           "if(existing){ shellSetActiveTab(existing.id); return false; }" +
           "var id='tab-'+(++shellTabCounter);" +
-          "shellTabs.push({id:id, url:url, title:fallbackLabel||'Loading...', groupId:null});" +
+          "var groupId=null;" +
+          "if(inheritGroup && shellActiveTabId){" +
+            "var activeTab=shellTabs.find(function(t){ return t.id===shellActiveTabId; });" +
+            "if(activeTab) groupId=activeTab.groupId||null;" +
+          "}" +
+          "shellTabs.push({id:id, url:url, title:fallbackLabel||'Loading...', groupId:groupId});" +
           "shellCreateTab(id, url, fallbackLabel||'Loading...');" +
           "shellSetActiveTab(id);" +
           "shellSaveState();" +
@@ -1066,8 +1126,8 @@ public class ShellScript {
         "window.addEventListener('blur', hideTabContextMenu);" +
 
         // ---- Address bar (press "/" to open, type/click to browse, Enter to go) ----
-        // In the Google Drive session, this branches into a different mode
-        // (see the shellSessionId===GDRIVE_SESSION_ID checks below): Drive
+        // In a Google Drive session, this branches into a different mode
+        // (see the shellSessionIsDrive checks below): Drive
         // items don't have one true hierarchical path the way local files
         // do (see GDriveBrowseHandler.java's class comment), so rather than
         // faking a path picker, typing here live-searches Drive by name
@@ -1078,13 +1138,13 @@ public class ShellScript {
           "var overlay=document.getElementById('addressBarOverlay');" +
           "var input=document.getElementById('addressBarInput');" +
           "var prefill='';" +
-          "if(shellSessionId!==GDRIVE_SESSION_ID){" +
+          "if(!shellSessionIsDrive){" +
             "var activeTab=shellTabs.find(function(t){ return t.id===shellActiveTabId; });" +
             "if(activeTab && activeTab.url.indexOf('/browse?path=')===0){" +
               "prefill=decodeURIComponent(activeTab.url.substring('/browse?path='.length));" +
             "}" +
           "}" +
-          "input.placeholder=(shellSessionId===GDRIVE_SESSION_ID)?'Search Google Drive by name...':'';" +
+          "input.placeholder=shellSessionIsDrive?'Search Google Drive by name...':'';" +
           "input.value=prefill;" +
           "overlay.classList.add('open');" +
           "input.focus();" +
@@ -1114,7 +1174,7 @@ public class ShellScript {
         "}" +
 
         "function goToAddressBarPath(){" +
-          "if(shellSessionId===GDRIVE_SESSION_ID){" +
+          "if(shellSessionIsDrive){" +
             "var q=document.getElementById('addressBarInput').value.trim();" +
             "closeAddressBar();" +
             "if(q){ navigateCurrentTab('/gdrive-search?q='+encodeURIComponent(q)); }" +
@@ -1144,7 +1204,7 @@ public class ShellScript {
         "function updateAddressSuggestions(){" +
           "clearTimeout(addressSuggestDebounce);" +
           "addressSuggestDebounce=setTimeout(function(){" +
-            "if(shellSessionId===GDRIVE_SESSION_ID){" +
+            "if(shellSessionIsDrive){" +
               "var q=document.getElementById('addressBarInput').value.trim();" +
               "if(!q){ renderAddressSuggestions([], ''); return; }" +
               "fetch('/gdrive-suggest?q='+encodeURIComponent(q)+'&foldersOnly=1').then(function(r){return r.json();})" +
@@ -1247,7 +1307,7 @@ public class ShellScript {
 
         "document.addEventListener('DOMContentLoaded', function(){" +
           "if(!shellLoadState()){ openTab('/dashboard','Dashboard'); }" +
-          "shellApplyDriveSidebar(shellSessionId===GDRIVE_SESSION_ID);" +
+          "shellApplyDriveSidebar(shellSessionIsDrive);" +
         "});" +
         "</script>";
 }

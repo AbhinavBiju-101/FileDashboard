@@ -341,13 +341,20 @@ public class GDriveBrowseHandler implements HttpHandler {
           .append("\">");
 
         // Real thumbnails for images only (matching GridRenderer's own
-        // isImage-only thumbnail behavior locally) - Drive generates
-        // thumbnails for lots of file types, but this stays conservative
-        // for now. onerror falls back to the plain icon rather than a
-        // broken-image glyph, since thumbnailLink's accessibility without
-        // extra auth headers isn't fully confirmed - see class comment.
-        if ("image".equals(category) && item.thumbnailLink != null && !item.thumbnailLink.isEmpty()) {
-            sb.append("<img class=\"thumb\" src=\"").append(PathUtil.htmlEscape(item.thumbnailLink))
+        // isImage-only thumbnail behavior locally). Proxied through this
+        // server's own /gdrive-file (viewUrl) rather than embedding Drive's
+        // thumbnailLink directly - thumbnailLink points straight at
+        // Google's own domain and needs the *browser's* Google session to
+        // be signed into the same account the file belongs to, which for
+        // most people viewing this app isn't the case; the browser would
+        // just get Google's own "You need access" permission page back
+        // instead of a thumbnail. Routing through viewUrl means the image
+        // bytes come back already authenticated with this app's own Drive
+        // connection, the same way the full preview and /gdrive-viewer
+        // already work. onerror still falls back to the plain icon for any
+        // other failure (deleted file, transient network error, etc).
+        if ("image".equals(category) && !viewUrl.isEmpty()) {
+            sb.append("<img class=\"thumb\" src=\"").append(PathUtil.htmlEscape(viewUrl))
               .append("\" loading=\"lazy\" alt=\"\" onerror=\"this.replaceWith(Object.assign(document.createElement('div'),{className:'icon',innerHTML:'").append(icon).append("'}));\">");
         } else {
             sb.append("<div class=\"icon\">").append(icon).append("</div>");
@@ -508,6 +515,12 @@ public class GDriveBrowseHandler implements HttpHandler {
         "var PREVIEW_IMAGE_EXTS=['jpg','jpeg','png','gif','bmp','webp','svg','ico'];" +
         "var PREVIEW_AUDIO_EXTS=['mp3','wav','ogg','m4a','flac','aac'];" +
         "var PREVIEW_VIDEO_EXTS=['mp4','webm','mov','m4v'];" +
+        // Same mapping PageScripts.java's preview modal uses for hljs
+        // language classes - redeclared here rather than shared, since
+        // this page deliberately doesn't load PageScripts.SCRIPT wholesale
+        // (see the class comment up top), only its CODE_HIGHLIGHT_RESOURCES
+        // (the hljs <script> tags themselves).
+        "var CODE_LANG_MAP={java:'java',py:'python',c:'c',cpp:'cpp',h:'cpp',hpp:'cpp',js:'javascript',ts:'typescript',html:'xml',htm:'xml',css:'css',json:'json',xml:'xml',yml:'yaml',yaml:'yaml',sh:'bash',ini:'ini',conf:'ini',properties:'properties'};" +
         "function gdriveExtOf(name){ var i=name.lastIndexOf('.'); return i===-1?'':name.substring(i+1).toLowerCase(); }" +
         "function openGDrivePreview(card){" +
           "var overlay=document.getElementById('gdrivePreviewOverlay');" +
@@ -551,7 +564,17 @@ public class GDriveBrowseHandler implements HttpHandler {
           "}else if(textlike){" +
             "body.innerHTML='<div class=\"docx-loading\">Loading...</div>';" +
             "fetch(viewUrl).then(function(r){return r.text();}).then(function(text){" +
-              "var pre=document.createElement('pre'); pre.textContent=text; body.innerHTML=''; body.appendChild(pre);" +
+              "if(['txt','log','csv','md'].indexOf(ext)!==-1){" +
+                "var pre=document.createElement('pre'); pre.textContent=text; body.innerHTML=''; body.appendChild(pre);" +
+              "}else{" +
+                "var d=document.createElement('div'); d.textContent=text; var esc=d.innerHTML;" +
+                "var lang=CODE_LANG_MAP[ext]||'';" +
+                "var lc=lang?' class=\"language-'+lang+'\"':'';" +
+                "body.innerHTML='<pre class=\"code-highlighted\"><code id=\"gdrivePreviewCodeBlock\"'+lc+'>'+esc+'</code></pre>'+" +
+                  "'<pre class=\"code-raw plain-text\" style=\"display:none;\">'+esc+'</pre>';" +
+                "if(window.hljs){ hljs.highlightElement(document.getElementById('gdrivePreviewCodeBlock')); }" +
+                "viewerAction.innerHTML+='<a href=\"#\" onclick=\"toggleGDrivePreviewCodeView(); return false;\" id=\"gdrivePreviewToggleRawBtn\" class=\"preview-download\">Raw text</a>';" +
+              "}" +
             "}).catch(function(){" +
               "body.innerHTML=\"<div class='preview-nopreview'><p>Couldn't load this file.</p></div>\";" +
             "});" +
@@ -561,10 +584,17 @@ public class GDriveBrowseHandler implements HttpHandler {
           "overlay.classList.add('open');" +
         "}" +
         "var gdrivePreviewViewerHref='';" +
+        "function toggleGDrivePreviewCodeView(){" +
+          "var h=document.querySelector('#gdrivePreviewBody .code-highlighted'), r=document.querySelector('#gdrivePreviewBody .code-raw'), b=document.getElementById('gdrivePreviewToggleRawBtn');" +
+          "if(!h||!r) return;" +
+          "var showingRaw=r.style.display!=='none';" +
+          "if(showingRaw){ r.style.display='none'; h.style.display=''; b.textContent='Raw text'; }" +
+          "else{ r.style.display=''; h.style.display='none'; b.textContent='Formatted'; }" +
+        "}" +
         "function openGDrivePreviewInViewer(){" +
           "var nav=parent&&parent.navigateCurrentTab?parent.navigateCurrentTab:function(u){location.href=u;};" +
           "closeGDrivePreview();" +
-          "if(parent&&parent.openTab){ parent.openTab(gdrivePreviewViewerHref,'Loading...'); } else { nav(gdrivePreviewViewerHref); }" +
+          "if(parent&&parent.openTab){ parent.openTab(gdrivePreviewViewerHref,'Loading...',true); } else { nav(gdrivePreviewViewerHref); }" +
         "}" +
         "function closeGDrivePreview(){" +
           "document.getElementById('gdrivePreviewOverlay').classList.remove('open');" +
@@ -572,6 +602,17 @@ public class GDriveBrowseHandler implements HttpHandler {
         "}" +
         "document.addEventListener('keydown', function(e){" +
           "if(e.key==='Escape') closeGDrivePreview();" +
+          // Same "/" -> address bar forwarding PageScripts.java's local
+          // pages do (see its keydown listener) - this page just never had
+          // its own copy, so pressing "/" while a Drive tab had focus did
+          // nothing instead of opening the shell's address bar in Drive
+          // mode, unlike every local Browse/Dashboard/Trash tab.
+          "if(e.key==='/' && document.activeElement.tagName!=='INPUT' && document.activeElement.tagName!=='TEXTAREA'){" +
+            "if(window.parent && window.parent!==window && window.parent.openAddressBar){" +
+              "e.preventDefault();" +
+              "window.parent.openAddressBar();" +
+            "}" +
+          "}" +
         "});" +
         "</script>";
 
@@ -657,7 +698,7 @@ public class GDriveBrowseHandler implements HttpHandler {
           "else if(action==='preview' && card){ openGDrivePreview(card); }" +
           "else if(action==='open-viewer' && card){" +
             "var href='/gdrive-viewer?id='+encodeURIComponent(card.dataset.gdriveId)+'&name='+encodeURIComponent(card.dataset.gdriveName)+'&mime='+encodeURIComponent(card.dataset.gdriveMime||'');" +
-            "if(parent&&parent.openTab){ parent.openTab(href,'Loading...'); } else { nav(href); }" +
+            "if(parent&&parent.openTab){ parent.openTab(href,'Loading...',true); } else { nav(href); }" +
           "}" +
           "else if(action==='open-external' && card){ window.open(card.dataset.gdriveWebviewlink,'_blank','noopener'); }" +
           "else if(action==='download' && card){ location.href=card.dataset.gdriveDownloadurl; }" +

@@ -19,6 +19,16 @@ import java.nio.charset.StandardCharsets;
  * rather than triggering a save-file prompt). Any other value (or omitted)
  * sends "attachment", same as local's /file?mode=download.
  *
+ * Understands Range requests (Accept-Ranges/206 Partial Content) - needed
+ * for <video>/<audio> elements, which almost always issue a Range request
+ * even on first load (some browsers refuse to start playback at all
+ * without a 206 response to their very first request), and for scrubbing
+ * partway into a video after that. Without this, a video preview would
+ * just silently fail to load rather than falling back to playing from the
+ * start. The whole file still has to be fetched from Drive and buffered
+ * here first (see the comment on that below) - only the response back to
+ * the browser is range-limited, not the upstream Drive request.
+ *
  * name/mime are only display hints carried over from the listing that
  * generated the link (see GDriveBrowseHandler.java) - the actual streamed
  * bytes and the real mime type used for the response come from a fresh
@@ -74,14 +84,60 @@ public class GDriveDownloadHandler implements HttpHandler {
             return;
         }
         byte[] bytes = buffer.toByteArray();
-
-        exchange.getResponseHeaders().set("Content-Type", mime);
         String disposition = "view".equals(mode) ? "inline" : "attachment";
         exchange.getResponseHeaders().set("Content-Disposition",
             disposition + "; filename=\"" + fileName.replace("\"", "'") + "\"");
-        exchange.sendResponseHeaders(200, bytes.length);
+        exchange.getResponseHeaders().set("Accept-Ranges", "bytes");
+
+        String rangeHeader = exchange.getRequestHeaders().getFirst("Range");
+        long[] range = rangeHeader == null ? null : parseRange(rangeHeader, bytes.length);
+        if (range == null) {
+            exchange.getResponseHeaders().set("Content-Type", mime);
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+            return;
+        }
+
+        long start = range[0], end = range[1];
+        long len = end - start + 1;
+        exchange.getResponseHeaders().set("Content-Type", mime);
+        exchange.getResponseHeaders().set("Content-Range", "bytes " + start + "-" + end + "/" + bytes.length);
+        exchange.sendResponseHeaders(206, len);
         try (OutputStream os = exchange.getResponseBody()) {
-            os.write(bytes);
+            os.write(bytes, (int) start, (int) len);
+        }
+    }
+
+    // Parses a single-range "bytes=START-END" Range header (the only form
+    // browsers actually send for media playback - multi-range requests
+    // aren't a real-world concern here). Returns null for anything
+    // malformed or unsatisfiable, which the caller treats the same as "no
+    // Range header at all" (falls back to a normal 200 with the whole
+    // file) rather than failing the request outright.
+    private long[] parseRange(String header, int totalLength) {
+        if (!header.startsWith("bytes=")) return null;
+        String spec = header.substring(6).split(",")[0].trim();
+        int dash = spec.indexOf('-');
+        if (dash == -1) return null;
+        try {
+            String startStr = spec.substring(0, dash);
+            String endStr = spec.substring(dash + 1);
+            long start, end;
+            if (startStr.isEmpty()) {
+                // "-N" = last N bytes
+                long suffixLen = Long.parseLong(endStr);
+                start = Math.max(0, totalLength - suffixLen);
+                end = totalLength - 1;
+            } else {
+                start = Long.parseLong(startStr);
+                end = endStr.isEmpty() ? totalLength - 1 : Long.parseLong(endStr);
+            }
+            if (start < 0 || end >= totalLength || start > end) return null;
+            return new long[]{start, end};
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 

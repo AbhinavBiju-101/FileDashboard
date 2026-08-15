@@ -52,8 +52,13 @@ public class SessionsHandler implements HttpHandler {
         sb.append("<p class='session-intro'>Every new browser tab you open on File Dashboard starts its own session - ")
           .append("its own set of tabs, kept separate from whatever else you have open. A session can only be open in ")
           .append("one browser tab at a time, so reopening one below moves it here (or, if it's open somewhere else, ")
-          .append("\"Close &amp; open here\" closes it there first). The pinned \u2601 Google Drive session browses a connected ")
-          .append("Drive account - connect one from Settings.</p>");
+          .append("\"Close &amp; open here\" closes it there first). Use \u2601 New Google Drive session below to start ")
+          .append("as many separate Drive-browsing sessions as you like, alongside your normal ones - connect an account ")
+          .append("from Settings first if you haven't yet.</p>");
+
+        sb.append("<button id='newDriveSessionBtn' class='session-btn session-btn-primary session-new-drive-btn' onclick='createDriveSession()'>")
+          .append("<img src='").append(DriveIcon.DATA_URI).append("' width='14' height='14' alt=''> New Google Drive session</button>");
+        sb.append("<div class='session-list-divider'></div>");
 
         sb.append("<div id='sessionList' class='session-list'><p class='empty'>Loading...</p></div>");
 
@@ -72,12 +77,15 @@ public class SessionsHandler implements HttpHandler {
         // than this, otherwise it's treated as safely reopenable even if
         // its owning tab never got a clean shutdown (crash, force-quit).
         "var HEARTBEAT_STALE_MS=10000;" +
-        // A fixed, well-known id (rather than one shellGenerateSessionId()
-        // would produce) so this row can always be found/recognized, even
-        // before it's ever actually been opened once - see the synthesized
-        // placeholder in renderSessions() below.
-        "var GDRIVE_SESSION_ID='session-gdrive';" +
         "var DRIVE_ICON_SRC='" + DriveIcon.DATA_URI + "';" +
+        // Legacy fixed id the old singleton Google Drive session always
+        // had - kept only so an entry saved under this id from before
+        // this page supported multiple Drive sessions still shows up and
+        // still displays with the Drive icon/treatment. New Drive sessions
+        // (see createDriveSession() below) get a normal generated id and
+        // are told apart purely by their own drive:true flag instead.
+        "var GDRIVE_SESSION_ID='session-gdrive';" +
+        "function isDriveSession(s){ return !!(s && (s.drive || s.id===GDRIVE_SESSION_ID)); }" +
 
         "function fdFormatDate(ts){" +
           "var d=new Date(ts);" +
@@ -108,50 +116,37 @@ public class SessionsHandler implements HttpHandler {
 
         "function renderSessions(){" +
           "var list=document.getElementById('sessionList');" +
-          "var sessions=loadSessionsMap();" +
-          "sessions=Object.assign({}, sessions);" +
-          // The Google Drive session is always shown, even the very first
-          // time - before it's ever actually been opened, it won't exist in
-          // the saved map yet, so a placeholder is synthesized here purely
-          // for display (never written back) until shellLoadSession()
-          // creates the real entry the first time someone opens it.
-          "if(!sessions[GDRIVE_SESSION_ID]){" +
-            "sessions[GDRIVE_SESSION_ID]={id:GDRIVE_SESSION_ID, name:'Google Drive', tabs:[], groups:[], createdAt:0, updatedAt:0};" +
-          "}" +
-          // Same idea for whichever session is open in THIS browser tab:
-          // if it only has "useless" tabs so far and has never been named,
-          // shellSaveState() deliberately never wrote it to storage (see
-          // its comment in ShellScript.java) - but the person still needs
-          // to be able to find and name it here, or it can never be kept.
-          // Pulled live from the parent shell frame since nothing's been
-          // persisted to read it back from otherwise.
+          "var sessions=Object.assign({}, loadSessionsMap());" +
+          // Same idea as before for whichever session is open in THIS
+          // browser tab: if it only has "useless" tabs so far and has
+          // never been named, shellSaveState() deliberately never wrote it
+          // to storage (see its comment in ShellScript.java) - but the
+          // person still needs to be able to find and name it here, or it
+          // can never be kept. Pulled live from the parent shell frame
+          // since nothing's been persisted to read it back from otherwise.
           "var mine0=currentSessionId();" +
           "if(mine0 && !sessions[mine0] && window.parent && window.parent.shellTabs){" +
-            "sessions[mine0]={id:mine0, name:'', tabs:window.parent.shellTabs, groups:window.parent.shellGroups||[], createdAt:0, updatedAt:0};" +
+            "sessions[mine0]={id:mine0, name:'', drive:!!window.parent.shellSessionIsDrive, tabs:window.parent.shellTabs, groups:window.parent.shellGroups||[], createdAt:0, updatedAt:0};" +
           "}" +
           "var ids=Object.keys(sessions);" +
-          "if(!ids.length){ list.innerHTML=\"<p class='empty'>No sessions yet.</p>\"; return; }" +
+          "if(!ids.length){ list.innerHTML=\"<p class='empty'>No sessions yet - open a new browser tab, or start a Drive session above.</p>\"; return; }" +
           "var mine=currentSessionId();" +
           "ids.sort(function(a,b){" +
-            "if(a===GDRIVE_SESSION_ID) return -1;" +
-            "if(b===GDRIVE_SESSION_ID) return 1;" +
             "return (sessions[b].updatedAt||0)-(sessions[a].updatedAt||0);" +
           "});" +
           "list.innerHTML=ids.map(function(id){" +
             "var s=sessions[id];" +
-            "var pinned=(id===GDRIVE_SESSION_ID);" +
+            "var isDrive=isDriveSession(s);" +
             "var active=isSessionActive(id);" +
             "var isMine=(id===mine);" +
             "var badge=isMine?\"<span class='session-badge session-badge-current'>This tab</span>\":" +
               "(active?\"<span class='session-badge session-badge-active'>Open in another tab</span>\":'');" +
-            "var unsavedBadge=(!pinned && !s.named)?\"<span class='session-badge session-badge-unsaved' title='Not named - it may get cleaned up automatically, and you will not be warned before losing it'>Unsaved</span>\":'';" +
-            "var icon=pinned?\"<img class='session-icon' src='\"+DRIVE_ICON_SRC+\"' width='16' height='16' alt='Google Drive' title='Google Drive'>\":'';" +
+            "var unsavedBadge=(!isDrive && !s.named)?\"<span class='session-badge session-badge-unsaved' title='Not named - it may get cleaned up automatically, and you will not be warned before losing it'>Unsaved</span>\":'';" +
+            "var icon=isDrive?\"<img class='session-icon' src='\"+DRIVE_ICON_SRC+\"' width='16' height='16' alt='Google Drive' title='Google Drive'>\":'';" +
             "var tabCount=(s.tabs||[]).length;" +
-            "var name=escapeHtml(s.name||(pinned?'Google Drive':'Unnamed session'));" +
+            "var name=escapeHtml(s.name||(isDrive?'Google Drive':'Unnamed session'));" +
             "var locked=(isMine||active);" +
-            "var metaLine=pinned&&!s.updatedAt?" +
-              "'Browse a connected Google Drive account':" +
-              "(tabCount+' tab'+(tabCount===1?'':'s')+' &middot; '+(s.updatedAt?('updated '+fdFormatDate(s.updatedAt)):'not saved yet'));" +
+            "var metaLine=tabCount+' tab'+(tabCount===1?'':'s')+' &middot; '+(s.updatedAt?('updated '+fdFormatDate(s.updatedAt)):'not saved yet');" +
             "return \"<div class='session-row' data-session-id=\\\"\"+id+\"\\\">\" +" +
               "\"<div class='session-info'>\" +" +
                 "\"<div class='session-name-row'>\"+icon+\"<span class='session-name'>\"+name+\"</span>\"+badge+unsavedBadge+\"</div>\" +" +
@@ -161,10 +156,14 @@ public class SessionsHandler implements HttpHandler {
                 "\"<button class='session-btn' data-session-action='rename'>\"+(s.name?'Rename':'Name this session')+\"</button>\" +" +
                 "(active&&!isMine?\"<button class='session-btn session-btn-warning' data-session-action='close-open-here' title='Close it in that tab and open it here'>Close &amp; open here</button>\":'') +" +
                 "\"<button class='session-btn session-btn-primary' data-session-action='open'\"+(locked?' disabled':'')+\" title=\\\"\"+(locked?(isMine?'This is the session currently open in this tab':'Already open in another tab'):'')+\"\\\">Open</button>\" +" +
-                "(pinned?'':\"<button class='session-btn session-btn-danger' data-session-action='delete'\"+(locked?' disabled':'')+\">Delete</button>\") +" +
+                "\"<button class='session-btn session-btn-danger' data-session-action='delete'\"+(locked?' disabled':'')+\">Delete</button>\" +" +
               "\"</div>\" +" +
             "\"</div>\";" +
           "}).join('');" +
+        "}" +
+
+        "function createDriveSession(){" +
+          "if(window.parent && window.parent.shellCreateDriveSession){ window.parent.shellCreateDriveSession(); }" +
         "}" +
 
         "document.addEventListener('click', function(e){" +
@@ -183,7 +182,7 @@ public class SessionsHandler implements HttpHandler {
               // real rather than an empty stub), or (defensively) some
               // other id that's simply gone.
               "if(id===currentSessionId() && window.parent && window.parent.shellTabs){" +
-                "s={id:id, name:'', tabs:window.parent.shellTabs, groups:window.parent.shellGroups||[], createdAt:Date.now(), updatedAt:Date.now()};" +
+                "s={id:id, name:'', drive:!!window.parent.shellSessionIsDrive, tabs:window.parent.shellTabs, groups:window.parent.shellGroups||[], createdAt:Date.now(), updatedAt:Date.now()};" +
               "}else{" +
                 "s={id:id, name:(id==='session-gdrive'?'Google Drive':''), tabs:[], groups:[], createdAt:Date.now(), updatedAt:Date.now()};" +
               "}" +

@@ -4,12 +4,12 @@ import java.io.File;
  * Renders the pinned, collapsible left sidebar used by the app shell: a link
  * back to the Dashboard, the Session Manager, a link to Home, and shortcuts
  * below it - which set of shortcuts depends on whether the browser tab's
- * current session is the specialized Google Drive session (see
- * ShellScript.java's GDRIVE_SESSION_ID / shellApplyDriveSidebar()):
+ * current session is a Google Drive session (see ShellScript.java's
+ * shellSessionIsDrive / shellApplyDriveSidebar()):
  *   - Normally: whichever classic OS folders (Desktop, Downloads,
  *     Documents, ...) actually exist under Config.ROOT_DIR, and Home/Recycle
  *     Bin point at the local filesystem.
- *   - In the Google Drive session: Home points at Drive's "My Drive" root,
+ *   - In a Google Drive session: Home points at Drive's "My Drive" root,
  *     Recycle Bin is hidden (Drive has its own trash, not wired up here
  *     yet), and the classic folders are replaced with just two shortcuts -
  *     "Home folders" and "Home files" - splitting whatever sits directly in

@@ -46,6 +46,15 @@ public class Styles {
 
         // ---- Session Manager ("/sessions") ----
         ".session-intro{margin:12px 24px 0;color:#666;font-size:13px;line-height:1.5;max-width:640px;}" +
+        // "+ New Google Drive session" generator button (see
+        // SessionsHandler.java) - sits right below the intro text, followed
+        // by session-list-divider, so it reads as a standalone action
+        // rather than the first row of the list itself. Replaces the old
+        // pinned/singleton Google Drive row that used to live inside
+        // .session-list.
+        ".session-new-drive-btn{margin:16px 24px 0;display:inline-flex;align-items:center;gap:8px;}" +
+        ".session-new-drive-btn img{flex-shrink:0;}" +
+        ".session-list-divider{height:1px;background:#e2e4e8;margin:16px 24px 0;}" +
         ".session-list{padding:16px 24px 24px;display:flex;flex-direction:column;gap:10px;}" +
         ".session-row{background:#fff;border:1px solid #e2e4e8;border-radius:10px;padding:12px 16px;" +
           "display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}" +
@@ -89,10 +98,20 @@ public class Styles {
         ".trash-expiry{color:#888;}" +
         ".trash-expiry.urgent{color:#c2410c;font-weight:600;}" +
         // Sidebar
-        ".sidebar{position:fixed;top:0;left:0;bottom:0;width:190px;background:#1f2328;overflow-y:auto;" +
+        // .sidebar is a column flex container so the session switcher (its
+        // last child, appended after .sidebar-inner - see
+        // SidebarRenderer.render()) is pushed all the way down to the
+        // bottom corner rather than just trailing whatever content happens
+        // to be above it. .sidebar-inner is the one that scrolls (flex:1 +
+        // its own overflow-y:auto) - overflow-y used to live on .sidebar
+        // itself, which meant a tall folder-shortcut list simply pushed the
+        // switcher further down the page instead of it staying pinned.
+        ".sidebar{position:fixed;top:0;left:0;bottom:0;width:190px;background:#1f2328;" +
+          "display:flex;flex-direction:column;" +
           "transition:width .15s;z-index:100;padding-top:52px;}" +
         ".sidebar.collapsed{width:56px;}" +
         ".sidebar.collapsed .sidebar-label{display:none;}" +
+        ".sidebar-inner{flex:1;overflow-y:auto;min-height:0;}" +
         ".sidebar-toggle{position:absolute;top:10px;left:12px;background:none;border:none;color:#fff;" +
           "font-size:20px;cursor:pointer;padding:0;}" +
         ".sidebar-item{display:flex;align-items:center;gap:10px;padding:9px 16px;color:#d1d5db;" +
@@ -100,10 +119,15 @@ public class Styles {
         ".sidebar-item:hover{background:#2d333b;color:#fff;}" +
         ".sidebar-icon{font-size:17px;width:20px;text-align:center;flex-shrink:0;}" +
         ".sidebar-divider{height:1px;background:#333;margin:8px 16px;}" +
-        // The session switcher pinned to the bottom of the sidebar (see
-        // SidebarRenderer.render()/ShellScript.java's shellToggleSessionMenu()).
+        // The session switcher pinned to the bottom corner of the sidebar
+        // (see SidebarRenderer.render()/ShellScript.java's
+        // shellToggleSessionMenu()) - flex-shrink:0 so the scrolling
+        // .sidebar-inner above it never squeezes it, margin-top:auto as a
+        // second safety net so it stays bottom-pinned even if .sidebar
+        // itself is ever given a fixed height wrapper that isn't strictly
+        // a flex column.
         ".sidebar-session-switcher{display:flex;align-items:center;gap:10px;padding:10px 16px;" +
-            "border-top:1px solid #333;color:#d1d5db;cursor:pointer;flex-shrink:0;}" +
+            "border-top:1px solid #333;color:#d1d5db;cursor:pointer;flex-shrink:0;margin-top:auto;}" +
         ".sidebar-session-switcher:hover{background:#2d333b;color:#fff;}" +
         ".sidebar-session-dot{width:8px;height:8px;border-radius:50%;background:#3b82f6;flex-shrink:0;}" +
         ".sidebar-session-dot.drive{background:#0ea54c;}" +
@@ -124,6 +148,7 @@ public class Styles {
         ".sidebar-session-menu-item.current{background:#f0f5ff;cursor:default;}" +
         ".sidebar-session-menu-item.current:hover{background:#f0f5ff;}" +
         ".sidebar-session-menu-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}" +
+        ".sidebar-session-menu-icon{flex-shrink:0;}" +
         ".sidebar-session-menu-badge{font-size:10px;font-weight:600;padding:1px 6px;border-radius:99px;flex-shrink:0;}" +
         ".sidebar-session-menu-badge.elsewhere{background:#fff1e6;color:#b5590a;}" +
         ".sidebar-session-menu-badge.unsaved{background:#fff3d6;color:#8a5a00;}" +
@@ -146,7 +171,7 @@ public class Styles {
         ".preview-close{background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#555;padding:0;}" +
         ".preview-body{padding:0;overflow:auto;flex:1;display:flex;align-items:center;justify-content:center;background:#fafafa;min-height:200px;}" +
         ".preview-body img{max-width:100%;max-height:80vh;object-fit:contain;}" +
-        ".preview-body video{max-width:100%;max-height:80vh;}" +
+        ".preview-body video{max-width:100%;max-height:80vh;min-width:320px;min-height:180px;background:#000;}" +
         ".preview-body audio{width:90%;margin:40px;}" +
         ".preview-body iframe{width:100%;height:80vh;border:none;}" +
         ".preview-body pre{white-space:pre-wrap;word-break:break-word;padding:20px;text-align:left;width:100%;box-sizing:border-box;font-family:Menlo,Consolas,monospace;font-size:13px;margin:0;}" +

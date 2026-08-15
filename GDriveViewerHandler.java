@@ -1,6 +1,7 @@
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.URLDecoder;
@@ -24,11 +25,15 @@ import java.nio.charset.StandardCharsets;
  *   - Native Google Docs/Sheets/Slides/Forms: an iframe onto Google's own
  *     embeddable "/preview" URL (see GDriveBrowseHandler.embeddablePreviewUrl()).
  *   - PDF: an iframe onto this server's own inline-mode file stream.
- *   - Text-like (md/txt/csv/json/code/...) and .docx: fetched client-side
- *     and rendered the same way the preview modal does (plain text in a
- *     <pre>, or mammoth.js for .docx) - see GDriveBrowseHandler.PREVIEW_SCRIPT,
- *     which this intentionally mirrors rather than shares outright, since
- *     the surrounding page chrome differs (full tab vs. overlay modal).
+ *   - Text-like (md/txt/csv/json/code/...): fetched server-side (same
+ *     GDriveClient.streamFile() call GDriveDownloadHandler uses) and
+ *     rendered exactly the way ViewerHandler.java renders local files -
+ *     MarkdownLite.render() for .md, hljs syntax highlighting for
+ *     recognized code extensions, plain <pre> otherwise - rather than a
+ *     lookalike that only ever produced a plain-text dump regardless of
+ *     file type. .docx is the one exception: still fetched and rendered
+ *     client-side via mammoth.js (see GDriveBrowseHandler.PREVIEW_SCRIPT),
+ *     since there's no Java-side equivalent to convert it with here.
  * Anything else falls back to a "no reading view for this file type" page
  * with a download link, matching ViewerHandler's own .viewer-unsupported.
  */
@@ -65,6 +70,8 @@ public class GDriveViewerHandler implements HttpHandler {
         boolean textlike = GDriveBrowseHandler.isTextLike(mime, name);
         boolean isDocx = ext.equals("docx");
         boolean isPdf = ext.equals("pdf");
+        boolean isMarkdown = textlike && ext.equals("md");
+        boolean isCode = textlike && !isMarkdown && CodeLanguageUtil.shouldHighlight(ext);
 
         String webViewLink = null;
         if (isNative) {
@@ -79,13 +86,34 @@ public class GDriveViewerHandler implements HttpHandler {
         String viewUrl = isNative ? GDriveBrowseHandler.embeddablePreviewUrl(webViewLink)
               : (downloadUrl + "&mode=view");
 
+        // Fetched right here, server-side, the same way GDriveDownloadHandler
+        // does for a plain download - not left to a client-side fetch() the
+        // way the old version of this page did - specifically so it can be
+        // handed to MarkdownLite.render()/escaped into a hljs-ready <pre>
+        // exactly like ViewerHandler.java does for local files, rather than
+        // always dumping raw, unrendered, unhighlighted text into a <pre>
+        // regardless of extension.
+        String textContent = null;
+        boolean textLoadFailed = false;
+        if (textlike) {
+            try {
+                ByteArrayOutputStream buf = new ByteArrayOutputStream();
+                GDriveClient.streamFile(id, buf);
+                textContent = new String(buf.toByteArray(), StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                textLoadFailed = true;
+            }
+        }
+
         StringBuilder sb = new StringBuilder();
         sb.append("<!DOCTYPE html><html><head><meta charset='UTF-8'>");
         sb.append("<meta name='viewport' content='width=device-width, initial-scale=1'>");
         sb.append("<title>").append(PathUtil.htmlEscape(name)).append("</title>");
         sb.append(ViewerHandler.viewerStyles());
         sb.append(gdriveViewerStyles());
-        sb.append(PageScripts.CODE_HIGHLIGHT_RESOURCES);
+        if (!isMarkdown) {
+            sb.append(PageScripts.CODE_HIGHLIGHT_RESOURCES);
+        }
         sb.append(PageScripts.DOCX_RESOURCES);
         sb.append("</head><body class='viewer-body'>");
 
@@ -98,6 +126,9 @@ public class GDriveViewerHandler implements HttpHandler {
         if (downloadUrl != null) {
             sb.append("<a href='").append(PathUtil.htmlEscape(downloadUrl)).append("'>Download</a>");
         }
+        if (isCode && textContent != null) {
+            sb.append("<a href=\"#\" onclick=\"toggleGDriveCodeView(); return false;\" id='toggleRawBtn'>Show raw text</a>");
+        }
         sb.append("</div></div>");
 
         sb.append("<div class='viewer-content' id='gdriveViewerContent'>");
@@ -108,7 +139,25 @@ public class GDriveViewerHandler implements HttpHandler {
         } else if (isDocx) {
             sb.append("<div class='viewer-reading docx-loading' id='gdriveDocxLoading'>Loading document...</div>");
         } else if (textlike) {
-            sb.append("<div class='viewer-reading docx-loading' id='gdriveTextLoading'>Loading...</div>");
+            if (textContent == null) {
+                sb.append("<div class='viewer-unsupported'><p>Couldn't load this file from Google Drive").append(textLoadFailed ? "." : " - it may be empty.").append("</p>");
+                if (downloadUrl != null) {
+                    sb.append("<p><a href='").append(PathUtil.htmlEscape(downloadUrl)).append("'>Download it instead</a></p>");
+                }
+                sb.append("</div>");
+            } else if (isMarkdown) {
+                sb.append("<div class='viewer-reading markdown-body'>").append(MarkdownLite.render(textContent)).append("</div>");
+            } else if (isCode) {
+                String lang = CodeLanguageUtil.hljsLanguage(ext);
+                String langClass = lang.isEmpty() ? "" : " class=\"language-" + lang + "\"";
+                String escaped = PathUtil.htmlEscape(textContent);
+                sb.append("<div class='viewer-reading code-viewer'>");
+                sb.append("<pre class='code-highlighted'><code id='gdriveCodeBlock'").append(langClass).append(">").append(escaped).append("</code></pre>");
+                sb.append("<pre class='code-raw plain-text' style='display:none;'>").append(escaped).append("</pre>");
+                sb.append("</div>");
+            } else {
+                sb.append("<pre class='viewer-reading plain-text'>").append(PathUtil.htmlEscape(textContent)).append("</pre>");
+            }
         } else {
             sb.append("<div class='viewer-unsupported'><p>This file type doesn't have a dedicated reading view.</p>");
             if (downloadUrl != null) {
@@ -118,30 +167,37 @@ public class GDriveViewerHandler implements HttpHandler {
         }
         sb.append("</div>");
 
-        if (isDocx || textlike) {
+        if (isDocx) {
             sb.append("<script>");
             sb.append("fetch(").append(jsString(viewUrl)).append(")");
-            if (isDocx) {
-                sb.append(".then(function(r){return r.arrayBuffer();}).then(function(buf){")
-                  .append("if(!window.mammoth) throw new Error('renderer unavailable');")
-                  .append("return mammoth.convertToHtml({arrayBuffer:buf});")
-                  .append("}).then(function(result){")
-                  .append("document.getElementById('gdriveViewerContent').innerHTML='<div class=\"viewer-reading docx-preview\">'+result.value+'</div>';")
-                  .append("}).catch(function(){")
-                  .append("document.getElementById('gdriveViewerContent').innerHTML=")
-                  .append("\"<div class='viewer-unsupported'><p>Could not render a preview for this document.</p>")
-                  .append(downloadUrl != null ? ("<p><a href=\\'" + downloadUrl + "\\'>Download instead</a></p>") : "")
-                  .append("</div>\";});");
-            } else {
-                sb.append(".then(function(r){return r.text();}).then(function(text){")
-                  .append("var pre=document.createElement('pre');")
-                  .append("pre.className='viewer-reading plain-text';")
-                  .append("pre.textContent=text;")
-                  .append("var el=document.getElementById('gdriveViewerContent'); el.innerHTML=''; el.appendChild(pre);")
-                  .append("}).catch(function(){")
-                  .append("document.getElementById('gdriveViewerContent').innerHTML=\"<div class='viewer-unsupported'><p>Couldn't load this file.</p></div>\";")
-                  .append("});");
-            }
+            sb.append(".then(function(r){return r.arrayBuffer();}).then(function(buf){")
+              .append("if(!window.mammoth) throw new Error('renderer unavailable');")
+              .append("return mammoth.convertToHtml({arrayBuffer:buf});")
+              .append("}).then(function(result){")
+              .append("document.getElementById('gdriveViewerContent').innerHTML='<div class=\"viewer-reading docx-preview\">'+result.value+'</div>';")
+              .append("}).catch(function(){")
+              .append("document.getElementById('gdriveViewerContent').innerHTML=")
+              .append("\"<div class='viewer-unsupported'><p>Could not render a preview for this document.</p>")
+              .append(downloadUrl != null ? ("<p><a href=\\'" + downloadUrl + "\\'>Download instead</a></p>") : "")
+              .append("</div>\";});");
+            sb.append("</script>");
+        }
+        if (isCode && textContent != null) {
+            // Same hljs.highlightElement() + raw/formatted toggle
+            // ViewerHandler.viewerScript() provides for local files -
+            // duplicated in miniature here rather than shared, since that
+            // method is private to ViewerHandler and bundled together with
+            // local-only edit-mode logic (Ctrl+S save, textarea toggling)
+            // that doesn't apply to this read-only Drive view.
+            sb.append("<script>");
+            sb.append("if(window.hljs){ var cb=document.getElementById('gdriveCodeBlock'); if(cb) hljs.highlightElement(cb); }");
+            sb.append("function toggleGDriveCodeView(){");
+            sb.append("var h=document.querySelector('.code-highlighted'), r=document.querySelector('.code-raw'), b=document.getElementById('toggleRawBtn');");
+            sb.append("if(!h||!r) return;");
+            sb.append("var showingRaw=r.style.display!=='none';");
+            sb.append("if(showingRaw){ r.style.display='none'; h.style.display=''; b.textContent='Show raw text'; }");
+            sb.append("else{ r.style.display=''; h.style.display='none'; b.textContent='Show formatted'; }");
+            sb.append("}");
             sb.append("</script>");
         }
 

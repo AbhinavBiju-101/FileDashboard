@@ -174,7 +174,7 @@ public class PageScripts {
             "('/viewer?trashId='+encodeURIComponent(currentPreviewTrashId)+'&trashSub='+encodeURIComponent(currentPreviewTrashSub)):" +
             "('/viewer?path='+encodeURIComponent(currentPreviewPath));" +
           "closePreview();" +
-          "if(window.parent && window.parent.openTab){ window.parent.openTab(viewerUrl, name); }" +
+          "if(window.parent && window.parent.openTab){ window.parent.openTab(viewerUrl, name, true); }" +
           "else{ window.open(viewerUrl, '_blank'); }" +
         "}" +
         // "Open folder" - jumps to wherever the file currently open in the
@@ -475,7 +475,7 @@ public class PageScripts {
             "var viewerUrl=card.dataset.type==='trash'?" +
               "('/viewer?trashId='+encodeURIComponent(card.dataset.trashId)+'&trashSub='+encodeURIComponent(card.dataset.trashSub||'')):" +
               "('/viewer?path='+encodeURIComponent(card.dataset.path));" +
-            "if(window.parent && window.parent.openTab){ window.parent.openTab(viewerUrl, card.dataset.name); }" +
+            "if(window.parent && window.parent.openTab){ window.parent.openTab(viewerUrl, card.dataset.name, true); }" +
             "else{ window.open(viewerUrl, '_blank'); }" +
           "}else if(action==='download-item'){" +
             "if(card.dataset.type==='trash'){" +
