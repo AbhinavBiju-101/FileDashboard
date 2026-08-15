@@ -1,0 +1,11 @@
+#BlueJ class context
+#Tue Jul 28 20:58:32 IST 2026
+comment0.target=SearchHandler
+comment0.text=\r\n Serves "/search?path\=...&q\=..." - recursively searches everything under\r\n the given folder (case-insensitive filename match) and renders results as\r\n a flat grid, each card labeled with which subfolder it came from.\r\n
+comment1.params=exchange
+comment1.target=void handle(com.sun.net.httpserver.HttpExchange)
+comment2.params=matches q relPath
+comment2.target=java.lang.String buildResultsPage(java.util.List, java.lang.String, java.lang.String)
+comment3.params=exchange code msg
+comment3.target=void sendText(com.sun.net.httpserver.HttpExchange, int, java.lang.String)
+numComments=4

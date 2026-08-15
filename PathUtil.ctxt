@@ -1,0 +1,13 @@
+#BlueJ class context
+#Tue Jul 28 20:58:32 IST 2026
+comment0.target=PathUtil
+comment0.text=\r\n Helpers for turning a URL "path" query param into a real File, safely.\r\n Every incoming request path is resolved against Config.ROOT_DIR and checked\r\n so nobody can escape it with things like "../../etc/passwd".\r\n
+comment1.params=relativePath
+comment1.target=java.io.File resolve(java.lang.String)
+comment2.params=file
+comment2.target=java.lang.String relativeToRoot(java.io.File)
+comment3.params=s
+comment3.target=java.lang.String urlEncode(java.lang.String)
+comment4.params=s
+comment4.target=java.lang.String htmlEscape(java.lang.String)
+numComments=5

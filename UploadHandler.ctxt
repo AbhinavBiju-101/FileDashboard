@@ -1,0 +1,13 @@
+#BlueJ class context
+#Tue Jul 28 20:58:32 IST 2026
+comment0.target=UploadHandler
+comment0.text=\r\n Handles "POST /upload?path\=..." with a multipart/form-data body\r\n containing a single <input type\="file" name\="file">.\r\n
+comment1.params=exchange
+comment1.target=void handle(com.sun.net.httpserver.HttpExchange)
+comment2.params=name
+comment2.target=java.lang.String sanitizeFilename(java.lang.String)
+comment3.params=contentType
+comment3.target=java.lang.String extractBoundary(java.lang.String)
+comment4.params=is
+comment4.target=byte[] readAll(java.io.InputStream)
+numComments=5

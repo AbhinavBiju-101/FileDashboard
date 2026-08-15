@@ -1,0 +1,8 @@
+#BlueJ class context
+#Tue Jul 28 20:58:32 IST 2026
+comment0.target=AuthFilter
+comment0.text=\r\n If Config.ACCESS_TOKEN is set, every request must carry a matching\r\n "?token\=..." query param (once) or a "dash_token" cookie (set automatically\r\n after the first successful token check) - otherwise the request is\r\n rejected with 401. If ACCESS_TOKEN is null, this filter is a no-op.\r\n
+comment1.target=java.lang.String description()
+comment2.params=exchange name
+comment2.target=java.lang.String getCookie(com.sun.net.httpserver.HttpExchange, java.lang.String)
+numComments=3

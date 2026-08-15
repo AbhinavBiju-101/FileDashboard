@@ -1,0 +1,15 @@
+#BlueJ class context
+#Tue Jul 28 20:58:32 IST 2026
+comment0.target=GridRenderer
+comment0.text=\r\n Renders a single folder or file as an HTML grid card. Shared between\r\n DashboardHandler (browsing one folder) and SearchHandler (flat results\r\n that may come from many different subfolders).\r\n
+comment1.params=childRel displayName
+comment1.target=java.lang.String folderCard(java.lang.String, java.lang.String)
+comment2.params=f childRel showFolderPath folderLabel
+comment2.target=java.lang.String fileCard(java.io.File, java.lang.String, boolean, java.lang.String)
+comment3.params=ext
+comment3.target=java.lang.String iconFor(java.lang.String)
+comment4.params=name
+comment4.target=java.lang.String getExtension(java.lang.String)
+comment5.params=bytes
+comment5.target=java.lang.String humanSize(long)
+numComments=6

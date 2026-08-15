@@ -1,0 +1,17 @@
+#BlueJ class context
+#Tue Jul 28 20:58:32 IST 2026
+comment0.target=FileViewHandler
+comment0.text=\r\n Serves "/file?path\=...&mode\=view|download".\r\n mode\=view streams the file inline (browser renders images/PDFs/text/video directly).\r\n mode\=download forces a Save As via Content-Disposition\: attachment.\r\n\r\n Supports HTTP Range requests (RFC 7233), which is what lets a browser\:\r\n  - seek/scrub within an audio or video file instead of only playing from byte 0\r\n  - resume an interrupted download instead of restarting it\r\n
+comment1.params=exchange
+comment1.target=void handle(com.sun.net.httpserver.HttpExchange)
+comment2.params=exchange file fileLength
+comment2.target=void serveFull(com.sun.net.httpserver.HttpExchange, java.io.File, long)
+comment3.params=exchange file fileLength rangeHeader
+comment3.target=void servePartial(com.sun.net.httpserver.HttpExchange, java.io.File, long, java.lang.String)
+comment4.params=raf os start length
+comment4.target=void copy(java.io.RandomAccessFile, java.io.OutputStream, long, long)
+comment5.params=header fileLength
+comment5.target=long[] parseRange(java.lang.String, long)
+comment6.params=exchange code msg
+comment6.target=void sendText(com.sun.net.httpserver.HttpExchange, int, java.lang.String)
+numComments=7

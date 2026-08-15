@@ -1,0 +1,11 @@
+#BlueJ class context
+#Tue Jul 28 20:56:34 IST 2026
+comment0.target=MultipartParser
+comment0.text=\r\n Minimal multipart/form-data parser, just enough to pull the first uploaded\r\n file (a part with a "filename" attribute) out of a raw request body.\r\n Written by hand (byte-level) since no external libraries are used.\r\n
+comment1.params=body boundary
+comment1.target=MultipartParser.Part extractFilePart(byte[], java.lang.String)
+comment2.params=headers
+comment2.target=java.lang.String extractFilename(java.lang.String)
+comment3.params=data pattern fromIndex
+comment3.target=int indexOf(byte[], byte[], int)
+numComments=4
