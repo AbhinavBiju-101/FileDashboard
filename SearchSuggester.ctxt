@@ -1,9 +1,0 @@
-#BlueJ class context
-#Sun Aug 02 13:02:52 IST 2026
-comment0.target=SearchSuggester
-comment0.text=\r\n Builds ranked suggestions for the search box's autocomplete dropdown.\r\n Combines two signals\:\r\n  1. Activity - files/folders the person has actually opened, downloaded,\r\n     or browsed before (from RecentActivity), which get a relevance boost\r\n     and are checked first since that lookup is instant.\r\n  2. A capped, shallow filename search under the given folder, for things\r\n     that haven't been touched yet.\r\n Folders always sort above files when scores are equal, since jumping into\r\n a folder is usually the more common intent while typing.\r\n
-comment1.params=query searchRoot
-comment1.target=java.util.List suggest(java.lang.String, java.io.File)
-comment2.params=name needle
-comment2.target=int score(java.lang.String, java.lang.String)
-numComments=3

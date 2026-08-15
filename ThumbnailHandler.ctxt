@@ -1,9 +1,0 @@
-#BlueJ class context
-#Sun Aug 02 13:02:52 IST 2026
-comment0.target=ThumbnailHandler
-comment0.text=\r\n Serves "/thumbnail?path\=..." - a small scaled-down PNG for image files.\r\n Thumbnails are cached in memory, keyed by path + last-modified time, so\r\n scrolling a folder repeatedly doesn't re-decode images every time.\r\n
-comment1.params=exchange
-comment1.target=void handle(com.sun.net.httpserver.HttpExchange)
-comment2.params=original
-comment2.target=byte[] scaleToBytes(java.awt.image.BufferedImage)
-numComments=3

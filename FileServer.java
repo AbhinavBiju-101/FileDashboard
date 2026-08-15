@@ -70,10 +70,11 @@ public class FileServer {
         addContext(server, "/fileops", new FileOpsHandler());
         addContext(server, "/trash", new TrashHandler());
         addContext(server, "/trashops", new TrashOpsHandler());
-        addContext(server, "/folders", new FoldersHandler());
         addContext(server, "/viewer", new ViewerHandler());
         addContext(server, "/quickstart", new QuickstartHandler());
         addContext(server, "/settings", new SettingsHandler());
+        addContext(server, "/subfolders", new SubfoldersHandler());
+        addContext(server, "/dashboard-events", new DashboardEventsHandler());
 
         try {
             server.start();

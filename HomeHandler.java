@@ -54,6 +54,7 @@ public class HomeHandler implements HttpHandler {
 
         sb.append(PageScripts.MODAL_HTML);
         sb.append(PageScripts.SCRIPT);
+        sb.append(dashboardRefreshScript());
         sb.append("</div></body></html>");
         return sb.toString();
     }
@@ -110,6 +111,15 @@ public class HomeHandler implements HttpHandler {
             sb.append("<div class='dash-row'>").append(cards).append("</div>");
         }
         return sb.toString();
+    }
+
+    private String dashboardRefreshScript() {
+        return "<script>" +
+               "try{" +
+               "const es = new EventSource('/dashboard-events');" +
+               "es.onmessage = function(e){ if(e.data === 'refresh'){ location.reload(); } };" +
+               "}catch(err){ console.warn('Dashboard live refresh unavailable:', err); }" +
+               "</script>";
     }
 
     private String parentLabel(String rel) {

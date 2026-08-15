@@ -32,6 +32,7 @@ public class TrashManager {
         public String originalName;
         public boolean isDirectory;
         public long deletedTime;
+        public long size; // bytes, for files; 0 for folders (not worth summing recursively here)
     }
 
     static {
@@ -41,6 +42,9 @@ public class TrashManager {
     /** Moves a file/folder into the trash. relPath is relative to ROOT_DIR. */
     public static synchronized Entry moveToTrash(File target, String relPath) throws IOException {
         if (!Config.TRASH_DIR.exists()) Config.TRASH_DIR.mkdirs();
+
+        boolean wasDirectory = target.isDirectory();
+        long originalSize = wasDirectory ? 0 : target.length();
 
         String id = UUID.randomUUID().toString();
         String trashedName = id + "-" + target.getName();
@@ -53,8 +57,9 @@ public class TrashManager {
         e.trashedName = trashedName;
         e.originalRelPath = relPath;
         e.originalName = target.getName();
-        e.isDirectory = dest.isDirectory();
+        e.isDirectory = wasDirectory;
         e.deletedTime = System.currentTimeMillis();
+        e.size = originalSize;
         entries.put(id, e);
         save();
         return e;
@@ -141,7 +146,8 @@ public class TrashManager {
                   .append("\"originalRelPath\": \"").append(MiniJson.escape(e.originalRelPath)).append("\", ")
                   .append("\"originalName\": \"").append(MiniJson.escape(e.originalName)).append("\", ")
                   .append("\"isDirectory\": ").append(e.isDirectory).append(", ")
-                  .append("\"deletedTime\": ").append(e.deletedTime)
+                  .append("\"deletedTime\": ").append(e.deletedTime).append(", ")
+                  .append("\"size\": ").append(e.size)
                   .append("}");
                 sb.append(i < all.size() - 1 ? ",\n" : "\n");
             }
@@ -177,6 +183,8 @@ public class TrashManager {
                 e.isDirectory = Boolean.TRUE.equals(isDir);
                 Object time = obj.get("deletedTime");
                 e.deletedTime = time instanceof Double ? ((Double) time).longValue() : 0L;
+                Object sizeObj = obj.get("size");
+                e.size = sizeObj instanceof Double ? ((Double) sizeObj).longValue() : 0L;
                 if (e.id != null) entries.put(e.id, e);
             }
         } catch (Exception e) {

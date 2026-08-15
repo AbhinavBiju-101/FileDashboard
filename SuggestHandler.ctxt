@@ -1,7 +1,0 @@
-#BlueJ class context
-#Sun Aug 02 13:02:52 IST 2026
-comment0.target=SuggestHandler
-comment0.text=\r\n Serves "/suggest?q\=...&path\=..." - returns a small JSON array of\r\n {name, path, type} suggestions for the search box's live dropdown,\r\n ranked by SearchSuggester (activity first, then a shallow filename walk).\r\n
-comment1.params=exchange
-comment1.target=void handle(com.sun.net.httpserver.HttpExchange)
-numComments=2

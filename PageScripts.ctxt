@@ -1,5 +1,0 @@
-#BlueJ class context
-#Sun Aug 02 13:02:52 IST 2026
-comment0.target=PageScripts
-comment0.text=\r\n Everything client-side that's shared across content pages (Dashboard,\r\n Browse, Search, Recycle Bin)\: the in-app preview modal, the selection\r\n model (click/ctrl-click/shift-click/double-click), the right-click\r\n context menu, the "Move to..." folder picker, type-filter chips, and\r\n new-folder/rename/duplicate/move/delete actions. Included once per page\r\n via MODAL_HTML + SCRIPT.\r\n
-numComments=1

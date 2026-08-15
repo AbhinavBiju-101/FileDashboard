@@ -47,6 +47,14 @@ public class RecentActivity {
     private static final Map<String, Integer> viewCounts = new ConcurrentHashMap<>();
     private static final Map<String, Integer> folderVisitCounts = new ConcurrentHashMap<>();
 
+    // Bumped on every recorded change - lets DashboardEventsHandler detect
+    // "something changed" without needing to diff the actual data.
+    private static volatile long version = 0;
+
+    public static long getVersion() {
+        return version;
+    }
+
     static {
         load();
     }
@@ -135,6 +143,7 @@ public class RecentActivity {
     // ---------- Persistence ----------
 
     private static synchronized void save() {
+        version++;
         try {
             if (!Config.DATA_DIR.exists()) Config.DATA_DIR.mkdirs();
 

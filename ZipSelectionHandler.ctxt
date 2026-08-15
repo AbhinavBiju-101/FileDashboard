@@ -1,7 +1,0 @@
-#BlueJ class context
-#Sun Aug 02 13:02:52 IST 2026
-comment0.target=ZipSelectionHandler
-comment0.text=\r\n Serves "/zip-selection?paths\=a|b|c" - like ZipDownloadHandler but for an\r\n arbitrary multi-select group instead of one whole folder. Each selected\r\n top-level item keeps its own name as the entry prefix, so folders keep\r\n their internal structure and files sit at the zip's root.\r\n
-comment1.params=exchange
-comment1.target=void handle(com.sun.net.httpserver.HttpExchange)
-numComments=2

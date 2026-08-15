@@ -26,10 +26,12 @@ public class PageScripts {
         "<div id='moveModalOverlay' class='move-modal-overlay' onclick=\"if(event.target===this) closeMoveModal();\">" +
         "<div class='move-modal-box'>" +
         "<h3>Move to...</h3>" +
-        "<input type='text' id='moveSearchInput' placeholder='Search folders...' autocomplete='off'>" +
+        "<div id='moveBreadcrumb' class='move-breadcrumb'></div>" +
         "<div id='moveFolderList' class='move-folder-list'></div>" +
-        "<div class='move-modal-actions'><button onclick='closeMoveModal()'>Cancel</button></div>" +
-        "</div></div>";
+        "<div class='move-modal-actions'>" +
+        "<button onclick='closeMoveModal()'>Cancel</button>" +
+        "<button onclick='confirmMoveHere()' class='move-confirm'>Move here</button>" +
+        "</div></div></div>";
 
     public static final String SCRIPT =
         "<script>" +
@@ -144,7 +146,7 @@ public class PageScripts {
 
         "document.addEventListener('dblclick', function(e){" +
           "var card=e.target.closest('.card[data-path]');" +
-          "if(!card) return;" +
+          "if(!card || card.dataset.type==='trash') return;" +
           "if(card.dataset.type==='folder'){ location.href='/browse?path='+encodeURIComponent(card.dataset.path); }" +
           "else{ openPreview(card.dataset.path, card.dataset.name, card.dataset.ext, card.dataset.viewable==='1'); }" +
         "});" +
@@ -185,14 +187,26 @@ public class PageScripts {
           "var menu=document.getElementById('contextMenu');" +
           "var html='';" +
           "if(selectedPaths.length>1){" +
-            "html+=menuItem('Download selected as .zip','zip-selection');" +
-            "html+=menuItem('Move selected to...','move-selection');" +
-            "html+=menuDivider();" +
-            "html+=menuItem('Delete selected','delete-selection');" +
+            "var allTrash=allCards().filter(function(c){return selectedPaths.indexOf(c.dataset.path)!==-1;})" +
+              ".every(function(c){return c.dataset.type==='trash';});" +
+            "if(allTrash){" +
+              "html+=menuItem('Restore selected','restore-selection');" +
+              "html+=menuDivider();" +
+              "html+=menuItem('Delete selected forever','permanent-delete-selection');" +
+            "}else{" +
+              "html+=menuItem('Download selected as .zip','zip-selection');" +
+              "html+=menuItem('Move selected to...','move-selection');" +
+              "html+=menuDivider();" +
+              "html+=menuItem('Delete selected','delete-selection');" +
+            "}" +
           "}else{" +
             "var card=lastSelectedCard;" +
             "var type=card.dataset.type;" +
-            "if(type==='file'){" +
+            "if(type==='trash'){" +
+              "html+=menuItem('Restore','restore-item');" +
+              "html+=menuDivider();" +
+              "html+=menuItem('Delete forever','permanent-delete-item');" +
+            "}else if(type==='file'){" +
               "html+=menuItem('Open','open-item');" +
               "if(card.dataset.ext==='pdf'||card.dataset.textlike==='1'){" +
                 "html+=menuItem('Open Viewer','open-viewer');" +
@@ -282,6 +296,25 @@ public class PageScripts {
           "else if(action==='new-folder-here'){ newFolder(document.getElementById('contextMenu').dataset.folderPath); }" +
           "else if(action==='zip-current-folder'){" +
             "window.location.href='/zip?path='+encodeURIComponent(document.getElementById('contextMenu').dataset.folderPath);" +
+          "}else if(action==='restore-item'){ restoreItem(card.dataset.path, card.dataset.name); }" +
+          "else if(action==='permanent-delete-item'){ permanentDeleteItem(card.dataset.path, card.dataset.name); }" +
+          "else if(action==='restore-selection'){" +
+            "Promise.all(selectedPaths.map(function(id){" +
+              "return fetch('/trashops',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'restore',id:id}).toString()}).then(function(r){return r.json();});" +
+            "})).then(function(results){" +
+              "var failed=results.filter(function(r){return !r.success;});" +
+              "if(failed.length){ alert('Some items could not be restored: '+failed.map(function(r){return r.message;}).join('; ')); }" +
+              "location.reload();" +
+            "});" +
+          "}else if(action==='permanent-delete-selection'){" +
+            "if(!confirm('Permanently delete '+selectedPaths.length+' items? This cannot be undone.')) return;" +
+            "Promise.all(selectedPaths.map(function(id){" +
+              "return fetch('/trashops',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'permanent-delete',id:id}).toString()}).then(function(r){return r.json();});" +
+            "})).then(function(results){" +
+              "var failed=results.filter(function(r){return !r.success;});" +
+              "if(failed.length){ alert('Some items could not be deleted: '+failed.map(function(r){return r.message;}).join('; ')); }" +
+              "location.reload();" +
+            "});" +
           "}" +
         "}" +
 
@@ -325,28 +358,42 @@ public class PageScripts {
 
         // ---- Move to... modal ----
         "var moveTargetPaths=[];" +
+        "var moveCurrentPath='';" +
         "function openMoveModal(paths){" +
           "moveTargetPaths=paths;" +
           "document.getElementById('moveModalOverlay').classList.add('open');" +
-          "document.getElementById('moveSearchInput').value='';" +
-          "loadFolderList('');" +
-          "document.getElementById('moveSearchInput').focus();" +
+          "loadMoveFolderList('');" +
         "}" +
         "function closeMoveModal(){ document.getElementById('moveModalOverlay').classList.remove('open'); }" +
-        "function loadFolderList(q){" +
-          "fetch('/folders?q='+encodeURIComponent(q)).then(function(r){return r.json();}).then(function(folders){" +
-            "var list=document.getElementById('moveFolderList');" +
-            "if(!folders.length){ list.innerHTML=\"<div class='move-folder-empty'>No matching folders.</div>\"; return; }" +
+        "function loadMoveFolderList(path){" +
+          "moveCurrentPath=path;" +
+          "renderMoveBreadcrumb(path);" +
+          "var list=document.getElementById('moveFolderList');" +
+          "list.innerHTML=\"<div class='move-folder-empty'>Loading...</div>\";" +
+          "fetch('/subfolders?path='+encodeURIComponent(path)).then(function(r){return r.json();}).then(function(folders){" +
+            "if(!folders.length){ list.innerHTML=\"<div class='move-folder-empty'>No subfolders here.</div>\"; return; }" +
             "list.innerHTML=folders.map(function(f){" +
-              "var p=f.path.replace(/\"/g,'&quot;');" +
-              "return '<div class=\"move-folder-item\" data-move-dest=\"'+p+'\">&#128193; '+f.label+'</div>';" +
+              "var childPath=path?path+'/'+f.name:f.name;" +
+              "var p=childPath.replace(/\"/g,'&quot;');" +
+              "return '<div class=\"move-folder-item\" data-move-into=\"'+p+'\">&#128193; '+f.name+'</div>';" +
             "}).join('');" +
           "});" +
         "}" +
-        "document.addEventListener('click', function(e){" +
-          "var item=e.target.closest('.move-folder-item');" +
-          "if(!item) return;" +
-          "var dest=item.dataset.moveDest;" +
+        "function renderMoveBreadcrumb(path){" +
+          "var bc=document.getElementById('moveBreadcrumb');" +
+          "var parts=path.split('/').filter(function(p){return p.length>0;});" +
+          "var html=\"<span class='move-crumb' data-move-into=''>Home</span>\";" +
+          "var acc='';" +
+          "parts.forEach(function(part){" +
+            "acc=acc?acc+'/'+part:part;" +
+            "var a=acc.replace(/\"/g,'&quot;');" +
+            "html+=' / <span class=\"move-crumb\" data-move-into=\"'+a+'\">'+part+'</span>';" +
+          "});" +
+          "bc.innerHTML=html;" +
+        "}" +
+        "function confirmMoveHere(){" +
+          "var dest=moveCurrentPath;" +
+          "if(moveTargetPaths.indexOf(dest)!==-1){ alert(\"That's the folder being moved - pick a different destination.\"); return; }" +
           "Promise.all(moveTargetPaths.map(function(p){" +
             "return postFileOp(new URLSearchParams({action:'move',path:p,destPath:dest}));" +
           "})).then(function(results){" +
@@ -354,6 +401,11 @@ public class PageScripts {
             "if(failed.length){ alert('Some items could not be moved: '+failed.map(function(r){return r.message;}).join('; ')); }" +
             "closeMoveModal(); location.reload();" +
           "});" +
+        "}" +
+        "document.addEventListener('click', function(e){" +
+          "var item=e.target.closest('.move-folder-item, .move-crumb');" +
+          "if(!item) return;" +
+          "loadMoveFolderList(item.dataset.moveInto);" +
         "});" +
 
         // ---- Trash actions ----
@@ -407,14 +459,8 @@ public class PageScripts {
 
         // ---- Live search suggestions ----
         "(function(){" +
-          "var debounceTimer, moveDebounce;" +
+          "var debounceTimer;" +
           "document.addEventListener('input', function(e){" +
-            "if(e.target.id==='moveSearchInput'){" +
-              "clearTimeout(moveDebounce);" +
-              "var val=e.target.value;" +
-              "moveDebounce=setTimeout(function(){ loadFolderList(val); }, 150);" +
-              "return;" +
-            "}" +
             "if(!e.target.classList.contains('js-search-input')) return;" +
             "var input=e.target;" +
             "var wrap=input.closest('.search-suggest-wrap');" +
@@ -429,12 +475,19 @@ public class PageScripts {
               ".then(function(r){return r.json();})" +
               ".then(function(items){" +
                 "if(!items.length){ dropdown.classList.remove('open'); dropdown.innerHTML=''; return; }" +
-                "dropdown.innerHTML=items.map(function(item){" +
+                "var html='';" +
+                "var dividerShown=false;" +
+                "items.forEach(function(item, idx){" +
+                  "if(!item.inCurrentFolder && !dividerShown && idx>0){" +
+                    "html+=\"<div class='search-suggestion-divider'>Elsewhere</div>\";" +
+                    "dividerShown=true;" +
+                  "}" +
                   "var icon=item.type==='folder'?'&#128193;':'&#128196;';" +
                   "var p=item.path.replace(/\"/g,'&quot;'), n=item.name.replace(/\"/g,'&quot;');" +
-                  "return '<div class=\"search-suggestion-item\" data-suggest-path=\"'+p+'\" data-suggest-type=\"'+item.type+'\" data-suggest-name=\"'+n+'\">'+" +
+                  "html+='<div class=\"search-suggestion-item\" data-suggest-path=\"'+p+'\" data-suggest-type=\"'+item.type+'\" data-suggest-name=\"'+n+'\">'+" +
                     "'<span class=\"search-suggestion-icon\">'+icon+'</span><span>'+item.name+'</span></div>';" +
-                "}).join('');" +
+                "});" +
+                "dropdown.innerHTML=html;" +
                 "dropdown.classList.add('open');" +
               "});" +
             "}, 180);" +

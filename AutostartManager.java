@@ -4,27 +4,34 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 
 /**
- * Wraps the same Windows Scheduled Task mechanism used by
- * install-autostart.bat / uninstall-autostart.bat, so the toggle on the
- * Settings page can enable/disable autostart directly instead of requiring
- * those scripts to be run manually. Only does anything on Windows; reports
- * a clear "not supported" message elsewhere rather than failing oddly.
+ * Wraps the same Windows registry autostart mechanism used by
+ * install-autostart.bat / uninstall-autostart.bat (HKCU Run key), so the
+ * toggle on the Settings page enables/disables the exact same thing those
+ * scripts do - not a separate, possibly-inconsistent mechanism. Only does
+ * anything on Windows; reports a clear "not supported" message elsewhere.
+ *
+ * This intentionally uses a Run-key registry entry rather than a Scheduled
+ * Task: schtasks has a command-line length limit that nested install paths
+ * can exceed, and some antivirus software (e.g. McAfee) flags Scheduled
+ * Task creation as suspicious more readily than a normal Run key entry.
  */
 public class AutostartManager {
 
-    private static final String TASK_NAME = "FileDashboard";
+    private static final String REG_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+    private static final String VALUE_NAME = "FileDashboard";
 
     public static boolean isWindows() {
         return System.getProperty("os.name", "").toLowerCase().contains("win");
     }
 
-    // Live-queries the actual Scheduled Task state rather than trusting a
-    // stored flag, so this stays correct even if the task was created/removed
-    // outside the app (via the .bat scripts, or Task Scheduler itself).
+    // Live-queries the actual registry value rather than trusting a stored
+    // flag, so this stays correct even if it was changed outside the app
+    // (via the .bat scripts, or the registry directly).
     public static boolean isEnabled() {
         if (!isWindows()) return false;
         try {
-            Process p = new ProcessBuilder("schtasks", "/query", "/tn", TASK_NAME).start();
+            Process p = new ProcessBuilder("reg", "query", REG_KEY, "/v", VALUE_NAME)
+                .redirectErrorStream(true).start();
             int exit = p.waitFor();
             return exit == 0;
         } catch (Exception e) {
@@ -37,7 +44,7 @@ public class AutostartManager {
         if (!isWindows()) return "Autostart management is only available on Windows.";
         try {
             String javaw = findJavaw();
-            if (javaw == null) return "Could not find javaw.exe on PATH - make sure Java's bin folder is on PATH.";
+            if (javaw == null) return "Could not find javaw.exe - make sure Java is installed correctly.";
 
             String jarPath = findJarPath();
             if (jarPath == null) {
@@ -45,12 +52,12 @@ public class AutostartManager {
                        "Use install-autostart.bat instead when running from source/BlueJ.";
             }
 
-            String tr = "\"" + javaw + "\" -jar \"" + jarPath + "\"";
-            Process p = new ProcessBuilder("schtasks", "/create", "/tn", TASK_NAME,
-                "/tr", tr, "/sc", "onlogon", "/rl", "limited", "/f").redirectErrorStream(true).start();
+            String command = "\"" + javaw + "\" -jar \"" + jarPath + "\"";
+            Process p = new ProcessBuilder("reg", "add", REG_KEY, "/v", VALUE_NAME,
+                "/t", "REG_SZ", "/d", command, "/f").redirectErrorStream(true).start();
             String output = readAll(p);
             int exit = p.waitFor();
-            return exit == 0 ? null : "schtasks failed: " + output.trim();
+            return exit == 0 ? null : "reg add failed: " + output.trim();
         } catch (Exception e) {
             return "Could not enable autostart: " + e.getMessage();
         }
@@ -60,12 +67,12 @@ public class AutostartManager {
     public static String disable() {
         if (!isWindows()) return "Autostart management is only available on Windows.";
         try {
-            Process p = new ProcessBuilder("schtasks", "/delete", "/tn", TASK_NAME, "/f")
+            Process p = new ProcessBuilder("reg", "delete", REG_KEY, "/v", VALUE_NAME, "/f")
                 .redirectErrorStream(true).start();
             String output = readAll(p);
             int exit = p.waitFor();
-            if (exit != 0 && !output.toLowerCase().contains("cannot find")) {
-                return "schtasks failed: " + output.trim();
+            if (exit != 0 && !output.toLowerCase().contains("unable to find")) {
+                return "reg delete failed: " + output.trim();
             }
             return null; // success, including "it already wasn't installed"
         } catch (Exception e) {
@@ -74,11 +81,8 @@ public class AutostartManager {
     }
 
     // Tries java.home first - the actual install directory of the JVM that's
-    // CURRENTLY RUNNING this code, which is correct regardless of PATH. This
-    // matters because a jar can be launched via file association (double-click)
-    // without java's bin folder ever being on PATH at all, even though Java
-    // obviously works (we're running inside it). Falls back to a PATH search
-    // only if that somehow doesn't pan out.
+    // CURRENTLY RUNNING this code, which is correct regardless of PATH. Falls
+    // back to a PATH search only if that somehow doesn't pan out.
     private static String findJavaw() {
         String javaHome = System.getProperty("java.home");
         if (javaHome != null) {
@@ -97,8 +101,7 @@ public class AutostartManager {
     }
 
     // Finds the path of the currently-running jar via the classloader's own
-    // code source - the standard way to answer "where am I actually running
-    // from" in Java. Returns null if running from loose .class files
+    // code source. Returns null if running from loose .class files
     // (BlueJ/dev mode) rather than a packaged jar.
     private static String findJarPath() {
         try {

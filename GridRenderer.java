@@ -86,7 +86,7 @@ public class GridRenderer {
 
     public static String iconFor(String ext) {
         switch (categoryFor(ext)) {
-            case "pdf": return "&#128196;";
+            case "pdf": return "&#128209;";
             case "document": return "&#128221;";
             case "spreadsheet": return "&#128202;";
             case "presentation": return "&#128200;";

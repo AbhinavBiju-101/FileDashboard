@@ -37,7 +37,8 @@ public class SuggestHandler implements HttpHandler {
             SearchSuggester.Suggestion s = suggestions.get(i);
             sb.append("{\"name\":\"").append(MiniJson.escape(s.name)).append("\",")
               .append("\"path\":\"").append(MiniJson.escape(s.path)).append("\",")
-              .append("\"type\":\"").append(s.isFolder ? "folder" : "file").append("\"}");
+              .append("\"type\":\"").append(s.isFolder ? "folder" : "file").append("\",")
+              .append("\"inCurrentFolder\":").append(s.inCurrentFolder).append("}");
             if (i < suggestions.size() - 1) sb.append(",");
         }
         sb.append("]");

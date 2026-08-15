@@ -10,9 +10,10 @@ import java.util.List;
 
 /**
  * Serves "/trash" - the recycle bin page. Lists everything moved there by
- * FileOpsHandler's delete action, each with its original location and
- * when it was deleted, with Restore and "Delete forever" per item, plus an
- * "Empty trash" action for everything at once.
+ * FileOpsHandler's delete action. Cards match the same minimal style as
+ * normal folder/file cards (icon, name, size) - actions live in the
+ * right-click menu (Restore, Delete forever), same interaction model as
+ * everywhere else, rather than a separate set of always-visible links.
  */
 public class TrashHandler implements HttpHandler {
 
@@ -52,20 +53,7 @@ public class TrashHandler implements HttpHandler {
         } else {
             sb.append("<div class='grid'>");
             for (TrashManager.Entry e : items) {
-                String icon = e.isDirectory ? "&#128193;" : GridRenderer.iconFor(GridRenderer.getExtension(e.originalName).toLowerCase());
-                String name = PathUtil.htmlEscape(e.originalName);
-                String location = e.originalRelPath.contains("/")
-                    ? e.originalRelPath.substring(0, e.originalRelPath.lastIndexOf('/'))
-                    : "Home";
-                sb.append("<div class=\"card\">");
-                sb.append("<div class=\"icon\">").append(icon).append("</div>");
-                sb.append("<div class=\"name\" title=\"").append(name).append("\">").append(name).append("</div>");
-                sb.append("<div class=\"meta path\">From: ").append(PathUtil.htmlEscape(location)).append("</div>");
-                sb.append("<div class=\"meta\">Deleted ").append(fmt.format(new Date(e.deletedTime))).append("</div>");
-                sb.append("<div class=\"actions\">");
-                sb.append("<a href=\"#\" data-action=\"restore\" data-id=\"").append(e.id).append("\" data-name=\"").append(name).append("\">Restore</a>");
-                sb.append("<a href=\"#\" data-action=\"permanent-delete\" data-id=\"").append(e.id).append("\" data-name=\"").append(name).append("\">Delete forever</a>");
-                sb.append("</div></div>");
+                sb.append(trashCard(e, fmt));
             }
             sb.append("</div>");
         }
@@ -73,6 +61,28 @@ public class TrashHandler implements HttpHandler {
         sb.append(PageScripts.MODAL_HTML);
         sb.append(PageScripts.SCRIPT);
         sb.append("</div></body></html>");
+        return sb.toString();
+    }
+
+    private String trashCard(TrashManager.Entry e, SimpleDateFormat fmt) {
+        String icon = e.isDirectory ? "&#128193;" : GridRenderer.iconFor(GridRenderer.getExtension(e.originalName).toLowerCase());
+        String name = PathUtil.htmlEscape(e.originalName);
+        String location = e.originalRelPath.contains("/")
+            ? e.originalRelPath.substring(0, e.originalRelPath.lastIndexOf('/'))
+            : "Home";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("<div class=\"card\" data-path=\"").append(e.id)
+          .append("\" data-name=\"").append(name)
+          .append("\" data-type=\"trash\">");
+        sb.append("<div class=\"icon\">").append(icon).append("</div>");
+        sb.append("<div class=\"name\" title=\"").append(name).append("\">").append(name).append("</div>");
+        if (!e.isDirectory) {
+            sb.append("<div class=\"meta\">").append(GridRenderer.humanSize(e.size)).append("</div>");
+        }
+        sb.append("<div class=\"meta path\">From: ").append(PathUtil.htmlEscape(location)).append("</div>");
+        sb.append("<div class=\"meta\">Deleted ").append(fmt.format(new Date(e.deletedTime))).append("</div>");
+        sb.append("</div>");
         return sb.toString();
     }
 }

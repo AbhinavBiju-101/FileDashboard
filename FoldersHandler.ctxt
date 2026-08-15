@@ -1,7 +1,0 @@
-#BlueJ class context
-#Sun Aug 02 13:02:52 IST 2026
-comment0.target=FoldersHandler
-comment0.text=\r\n Serves "/folders?q\=..." - a small JSON list of folders (path + name)\r\n under ROOT_DIR matching the query, for the "Move to..." picker. Always\r\n includes "Home" (the root itself) so there's a way to move something all\r\n the way back to the top.\r\n
-comment1.params=exchange
-comment1.target=void handle(com.sun.net.httpserver.HttpExchange)
-numComments=2

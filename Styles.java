@@ -36,6 +36,8 @@ public class Styles {
         ".search-suggestion-item{display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:13px;}" +
         ".search-suggestion-item:hover{background:#f4f5f7;}" +
         ".search-suggestion-icon{font-size:15px;flex-shrink:0;}" +
+        ".search-suggestion-divider{padding:6px 12px 4px;font-size:11px;color:#999;text-transform:uppercase;" +
+          "letter-spacing:.03em;border-top:1px solid #f0f0f0;margin-top:2px;}" +
         ".search-inline input[type=text]{padding:6px 8px;border:1px solid #c7cbd1;border-radius:6px;font-size:13px;}" +
         ".search-inline button{padding:6px 10px;border:none;background:#e5e7eb;border-radius:6px;cursor:pointer;font-size:13px;}" +
         ".meta.path{color:#999;font-size:10px;word-break:break-word;}" +
@@ -110,11 +112,16 @@ public class Styles {
         ".move-modal-box h3{margin:0 0 12px;font-size:15px;}" +
         ".move-modal-box input{padding:8px 10px;border:1px solid #c7cbd1;border-radius:6px;font-size:13px;margin-bottom:10px;}" +
         ".move-folder-list{overflow-y:auto;flex:1;border:1px solid #eee;border-radius:6px;min-height:120px;}" +
+        ".move-breadcrumb{font-size:13px;color:#555;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #eee;}" +
+        ".move-crumb{cursor:pointer;color:#2563eb;}" +
+        ".move-crumb:hover{text-decoration:underline;}" +
         ".move-folder-item{padding:8px 12px;cursor:pointer;font-size:13px;}" +
         ".move-folder-item:hover{background:#f0f5ff;}" +
         ".move-folder-empty{padding:16px;color:#888;font-size:13px;text-align:center;}" +
-        ".move-modal-actions{margin-top:12px;text-align:right;}" +
+        ".move-modal-actions{margin-top:12px;text-align:right;display:flex;justify-content:flex-end;gap:8px;}" +
         ".move-modal-actions button{padding:7px 14px;border:1px solid #c7cbd1;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;}" +
+        ".move-modal-actions .move-confirm{background:#2563eb;color:#fff;border-color:#2563eb;}" +
+        ".move-modal-actions .move-confirm:hover{background:#1d4ed8;}" +
         // Type-filter chips
         ".filter-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}" +
         ".chip{padding:5px 12px;border-radius:14px;background:#eef0f2;color:#555;font-size:12px;cursor:pointer;}" +

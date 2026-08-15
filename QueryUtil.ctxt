@@ -1,7 +1,0 @@
-#BlueJ class context
-#Sun Aug 02 13:02:52 IST 2026
-comment0.target=QueryUtil
-comment0.text=\r\n Tiny helper shared by handlers to pull a value out of a raw query string,\r\n e.g. "path\=Photos%2F2024&mode\=view".\r\n
-comment1.params=query key
-comment1.target=java.lang.String getParam(java.lang.String, java.lang.String)
-numComments=2

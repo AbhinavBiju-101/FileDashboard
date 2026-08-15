@@ -1,9 +1,0 @@
-#BlueJ class context
-#Sun Aug 02 13:02:52 IST 2026
-comment0.target=MiniJson
-comment0.text=\r\n A small, dependency-free JSON reader/writer. Only supports what this app\r\n actually needs (objects, arrays, strings, numbers, booleans, null) but\r\n handles string escaping correctly, which is the part that actually matters\r\n here since file paths can contain quotes, backslashes, and unicode.\r\n\r\n Parsed objects come back as Map<String,Object> / List<Object> / String /\r\n Double / Boolean / null, mirroring how most lightweight JSON libraries do it.\r\n
-comment1.params=s
-comment1.target=java.lang.String escape(java.lang.String)
-comment2.params=json
-comment2.target=java.lang.Object parse(java.lang.String)
-numComments=3

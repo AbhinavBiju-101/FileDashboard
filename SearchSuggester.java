@@ -16,8 +16,11 @@ import java.util.stream.Stream;
  *     and are checked first since that lookup is instant.
  *  2. A capped, shallow filename search under the given folder, for things
  *     that haven't been touched yet.
- * Folders always sort above files when scores are equal, since jumping into
- * a folder is usually the more common intent while typing.
+ *
+ * Results are grouped: direct children of the folder being searched from
+ * come first (marked inCurrentFolder=true, so the client can show a divider
+ * before anything else), then everything else. Within each group, folders
+ * sort above files, then by relevance score.
  */
 public class SearchSuggester {
 
@@ -27,6 +30,8 @@ public class SearchSuggester {
     public static List<Suggestion> suggest(String query, File searchRoot) {
         String needle = query.toLowerCase().trim();
         if (needle.isEmpty()) return new ArrayList<>();
+
+        String searchRootRel = PathUtil.relativeToRoot(searchRoot);
 
         List<Suggestion> results = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
@@ -42,7 +47,9 @@ public class SearchSuggester {
                 File f = PathUtil.resolve(relPath);
                 if (!f.exists()) continue;
                 seen.add(relPath);
-                results.add(new Suggestion(relPath, displayName, f.isDirectory(), score(displayName, needle) + 50));
+                boolean inCurrentFolder = parentOf(relPath).equals(searchRootRel);
+                results.add(new Suggestion(relPath, displayName, f.isDirectory(),
+                    score(displayName, needle) + 50, inCurrentFolder));
             } catch (IOException ignored) {
                 // stale/invalid recorded path - skip it
             }
@@ -62,7 +69,9 @@ public class SearchSuggester {
                         if (seen.contains(relPath)) return;
                         seen.add(relPath);
                         String displayName = p.getFileName().toString();
-                        results.add(new Suggestion(relPath, displayName, Files.isDirectory(p), score(displayName, needle)));
+                        boolean inCurrentFolder = parentOf(relPath).equals(searchRootRel);
+                        results.add(new Suggestion(relPath, displayName, Files.isDirectory(p),
+                            score(displayName, needle), inCurrentFolder));
                     });
             } catch (IOException ignored) {
                 // best-effort suggestions - a walk failure just means fewer results
@@ -70,11 +79,16 @@ public class SearchSuggester {
         }
 
         results.sort((a, b) -> {
+            if (a.inCurrentFolder != b.inCurrentFolder) return a.inCurrentFolder ? -1 : 1;
             if (a.isFolder != b.isFolder) return a.isFolder ? -1 : 1;
             return b.score - a.score;
         });
 
         return results.size() > MAX_SUGGESTIONS ? results.subList(0, MAX_SUGGESTIONS) : results;
+    }
+
+    private static String parentOf(String relPath) {
+        return relPath.contains("/") ? relPath.substring(0, relPath.lastIndexOf('/')) : "";
     }
 
     // Prefix matches rank highest, then earlier substring matches, then shorter names.
@@ -90,12 +104,14 @@ public class SearchSuggester {
         public final String name;
         public final boolean isFolder;
         public final int score;
+        public final boolean inCurrentFolder;
 
-        Suggestion(String path, String name, boolean isFolder, int score) {
+        Suggestion(String path, String name, boolean isFolder, int score, boolean inCurrentFolder) {
             this.path = path;
             this.name = name;
             this.isFolder = isFolder;
             this.score = score;
+            this.inCurrentFolder = inCurrentFolder;
         }
     }
 }
