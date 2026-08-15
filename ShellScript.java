@@ -487,6 +487,91 @@ public class ShellScript {
           "var sb=document.getElementById('sidebar');" +
           "if(sb){ sb.classList.toggle('drive-mode', !!isDrive); }" +
           "shellUpdateSessionSwitcher();" +
+          "var container=document.getElementById('sidebarDriveOnboardingFolders');" +
+          "if(container) container.innerHTML='';" +
+          "if(isDrive){" +
+            "var accountId=shellCurrentDriveAccountId();" +
+            "if(accountId) shellCheckDriveOnboarding(accountId);" +
+          "}" +
+        "}" +
+
+        // ---- Drive onboarding: offer to create default organizing folders ----
+        // (Pictures/Videos/Documents/Music/Uploads - see
+        // GDriveOnboardingHandler.java) the first time a Drive session opens
+        // for a given account, and show sidebar shortcuts to whichever of
+        // them exist either way. shellOnboardingPromptedThisLoad guards
+        // against re-showing the prompt every time shellApplyDriveSidebar()
+        // re-runs within the same page load (switching tabs back and forth
+        // between Drive sessions, etc.) - once dismissed (created or
+        // skipped) for a given account, don't ask again until the whole
+        // shell reloads, even if the server-side record shows "needs-prompt"
+        // due to a transient check failure moments earlier.
+        "var shellOnboardingPromptedThisLoad={};" +
+        "var GDRIVE_ONBOARDING_ICONS={Pictures:'&#128247;',Videos:'&#127909;',Documents:'&#128196;',Music:'&#127925;',Uploads:'&#11014;&#65039;'};" +
+        "var GDRIVE_ONBOARDING_ORDER=['Pictures','Videos','Documents','Music','Uploads'];" +
+        "function shellCheckDriveOnboarding(accountId){" +
+          "fetch('/gdrive-onboarding?account='+encodeURIComponent(accountId)).then(function(r){return r.json();}).then(function(res){" +
+            "shellRenderDriveOnboardingFolders(accountId, res.folders||{});" +
+            "if(res.status==='needs-prompt' && !shellOnboardingPromptedThisLoad[accountId]){" +
+              "shellOnboardingPromptedThisLoad[accountId]=true;" +
+              "shellOpenDriveOnboardingPrompt(accountId);" +
+            "}" +
+          "}).catch(function(){});" +
+        "}" +
+        "function shellRenderDriveOnboardingFolders(accountId, folders){" +
+          "var container=document.getElementById('sidebarDriveOnboardingFolders');" +
+          "if(!container) return;" +
+          "var html='';" +
+          "GDRIVE_ONBOARDING_ORDER.forEach(function(name){" +
+            "var id=folders[name];" +
+            "if(!id) return;" +
+            "var href='/gdrive?path='+encodeURIComponent(id)+'%7C'+encodeURIComponent(name)+'&account='+encodeURIComponent(accountId);" +
+            "var jsHref=href.replace(/\\\\/g,'\\\\\\\\').replace(/'/g,\"\\\\'\");" +
+            "html+=\"<a class='sidebar-item' href='\"+href+\"' onclick=\\\"return navigateCurrentTab('\"+jsHref+\"');\\\">\" +" +
+              "\"<span class='sidebar-icon'>\"+(GDRIVE_ONBOARDING_ICONS[name]||'')+\"</span><span class='sidebar-label'>\"+name+\"</span></a>\";" +
+          "});" +
+          "container.innerHTML=html;" +
+        "}" +
+        "function shellOpenDriveOnboardingPrompt(accountId){" +
+          "if(document.getElementById('gdriveOnboardingOverlay')) return;" +
+          "var overlay=document.createElement('div');" +
+          "overlay.id='gdriveOnboardingOverlay';" +
+          "overlay.className='gdrive-picker-overlay';" +
+          "var rows=GDRIVE_ONBOARDING_ORDER.map(function(name){" +
+            "return \"<label class='gdrive-onboarding-row'><input type='checkbox' value='\"+name+\"' checked> \"+GDRIVE_ONBOARDING_ICONS[name]+\" \"+name+\"</label>\";" +
+          "}).join('');" +
+          "overlay.innerHTML=\"<div class='gdrive-picker-box gdrive-onboarding-box'>\" +" +
+            "\"<div class='gdrive-picker-header'>Organize this Google Drive?</div>\" +" +
+            "\"<p class='gdrive-onboarding-desc'>Create a few top-level folders so files have an obvious place to go, with quick shortcuts in the sidebar. Skip this if it's already organized the way you like - nothing gets created either way unless you ask.</p>\" +" +
+            "\"<div class='gdrive-onboarding-rows'>\"+rows+\"</div>\" +" +
+            "\"<div class='gdrive-onboarding-actions'>\" +" +
+              "\"<button class='gdrive-onboarding-skip' id='gdriveOnboardingSkip'>Skip - I'm already organized</button>\" +" +
+              "\"<button class='gdrive-onboarding-create' id='gdriveOnboardingCreate'>Create folders</button>\" +" +
+            "\"</div>\" +" +
+          "\"</div>\";" +
+          "document.body.appendChild(overlay);" +
+          "document.getElementById('gdriveOnboardingSkip').addEventListener('click', function(){" +
+            "fetch('/gdrive-onboarding',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'}," +
+              "body:new URLSearchParams({action:'skip',account:accountId}).toString()}).then(function(){ overlay.remove(); });" +
+          "});" +
+          "document.getElementById('gdriveOnboardingCreate').addEventListener('click', function(){" +
+            "var names=Array.prototype.slice.call(overlay.querySelectorAll('input[type=checkbox]:checked')).map(function(cb){return cb.value;});" +
+            "if(!names.length){ overlay.remove(); return; }" +
+            "var btn=document.getElementById('gdriveOnboardingCreate'); btn.disabled=true; btn.textContent='Creating...';" +
+            "fetch('/gdrive-onboarding',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'}," +
+              "body:new URLSearchParams({action:'create',account:accountId,folders:names.join(',')}).toString()})" +
+              ".then(function(r){return r.json();}).then(function(res){" +
+                "overlay.remove();" +
+                "if(res.status==='error'){ alert(res.error||'Could not create folders.'); return; }" +
+                "shellRenderDriveOnboardingFolders(accountId, res.folders||{});" +
+                "var activeTab=shellTabs.find(function(t){ return t.id===shellActiveTabId; });" +
+                "if(activeTab && activeTab.url.indexOf('/gdrive')===0){" +
+                  "var frame=document.getElementById(shellActiveTabId+'-frame');" +
+                  "if(frame){ try{ frame.contentWindow.location.reload(); }catch(e){} }" +
+                "}" +
+              "}).catch(function(){ btn.disabled=false; btn.textContent='Create folders'; alert('Could not create folders.'); });" +
+          "});" +
+          "overlay.addEventListener('click', function(e){ if(e.target===overlay) overlay.remove(); });" +
         "}" +
 
         // The other end of "Close & open here": some other browser tab has

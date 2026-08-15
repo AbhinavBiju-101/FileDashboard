@@ -67,14 +67,32 @@ public class GDriveAuth {
 
     private static final java.io.File CONFIG_FILE = new java.io.File(Config.DATA_DIR, "gdrive.json");
 
-    // drive.readonly is the only scope this integration actually needs -
-    // browsing/downloading, no writes back to Drive (see
-    // GDriveBrowseHandler.java's class comment for why that's deliberate
-    // for this first pass). openid/email/profile are along for the ride so
-    // the one userinfo call completeAuth() already makes also returns a
-    // name and profile picture - zero extra round trips for "Connected as
-    // Jane Doe (jane@gmail.com)" instead of just the bare email.
-    public static final String SCOPE = "openid email profile https://www.googleapis.com/auth/drive.readonly";
+    // drive.readonly alone no longer covers everything this app does -
+    // GDriveOnboardingHandler.java's "create these organizing folders for
+    // me" flow needs to create new folders, which needs write access. The
+    // narrower https://www.googleapis.com/auth/drive.file scope was
+    // considered instead (write access, but only to files the app itself
+    // created) - rejected because it would also restrict *reading* to only
+    // app-created files, breaking the whole point of this app: browsing a
+    // person's existing, already-there Drive tree. So this is the full
+    // read/write "drive" scope instead - broader than strictly necessary
+    // for onboarding alone, but the only option that also preserves
+    // unrestricted read access. openid/email/profile are along for the
+    // ride so the one userinfo call completeAuth() already makes also
+    // returns a name and profile picture - zero extra round trips for
+    // "Connected as Jane Doe (jane@gmail.com)" instead of just the bare
+    // email.
+    //
+    // Accounts connected before this scope existed only hold a
+    // drive.readonly-scoped refresh token - Google will reject any write
+    // call (e.g. folder creation) made with it as an insufficient-scope
+    // error, not silently degrade. GDriveOnboardingHandler.java surfaces
+    // that specific case as "reconnect this account from Settings to grant
+    // folder-creation access" rather than a generic failure, but there's no
+    // way to detect it ahead of time short of actually trying the call -
+    // OAuth doesn't expose "what scope does my existing token actually
+    // have" cheaply.
+    public static final String SCOPE = "openid email profile https://www.googleapis.com/auth/drive";
 
     private static volatile String clientId = null;
     private static volatile String clientSecret = null;
@@ -204,6 +222,7 @@ public class GDriveAuth {
     public static synchronized void disconnect(String accountId) {
         accounts.remove(accountId);
         save();
+        UserDataStore.clearAccount(accountId);
     }
 
     // ---------- OAuth round trip ----------
@@ -383,6 +402,52 @@ public class GDriveAuth {
         return readJsonResponse(conn);
     }
 
+    // POSTs a raw JSON body with bearer auth - used by GDriveClient.java's
+    // createFolder() (Drive API's files.create). Distinct from postForm()
+    // above, which is form-urlencoded and client-credential-authenticated
+    // (the token endpoint) rather than bearer-token-authenticated (the
+    // Drive API itself).
+    static Map<String, Object> postJson(String urlStr, String bearerToken, String jsonBody) throws IOException {
+        HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
+        conn.setRequestMethod("POST");
+        conn.setDoOutput(true);
+        conn.setRequestProperty("Authorization", "Bearer " + bearerToken);
+        conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+        conn.setRequestProperty("Accept", "application/json");
+        conn.setConnectTimeout(15000);
+        conn.setReadTimeout(15000);
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
+        }
+        return readJsonResponse(conn);
+    }
+
+    // Same as postJson but PATCH - Drive API's files.update (rename, trash,
+    // and reparent-for-move all go through this one verb) doesn't support
+    // POST, and HttpURLConnection itself has no real PATCH support (its
+    // request-method validation only allows a fixed list, and the common
+    // "reflect into the private method field" workaround doesn't survive
+    // module encapsulation on modern JDKs - throws
+    // InaccessibleObjectException without a --add-opens flag this app
+    // doesn't set anywhere). Google's APIs document exactly this problem's
+    // fix: send it as a POST with an X-HTTP-Method-Override: PATCH header,
+    // which the server treats identically to a real PATCH.
+    static Map<String, Object> patchJson(String urlStr, String bearerToken, String jsonBody) throws IOException {
+        HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("X-HTTP-Method-Override", "PATCH");
+        conn.setDoOutput(true);
+        conn.setRequestProperty("Authorization", "Bearer " + bearerToken);
+        conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+        conn.setRequestProperty("Accept", "application/json");
+        conn.setConnectTimeout(15000);
+        conn.setReadTimeout(15000);
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
+        }
+        return readJsonResponse(conn);
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<String, Object> readJsonResponse(HttpURLConnection conn) throws IOException {
         int status = conn.getResponseCode();
@@ -399,8 +464,22 @@ public class GDriveAuth {
         }
         Map<String, Object> map = (Map<String, Object>) parsed;
         if (status < 200 || status >= 300) {
+            // Two different error shapes to account for here: the OAuth
+            // token endpoint's flat {"error_description": "..."} (postForm's
+            // callers), and the Drive API's own nested
+            // {"error": {"message": "...", ...}} (getJson/postJson's Drive
+            // v3 callers) - checked in that order so an OAuth error's flat
+            // description is preferred when both happen to be present.
             Object err = map.get("error_description");
-            if (err == null) err = map.get("error");
+            if (err == null) {
+                Object errObj = map.get("error");
+                if (errObj instanceof Map) {
+                    Object msg = ((Map<String, Object>) errObj).get("message");
+                    err = msg != null ? msg : errObj;
+                } else {
+                    err = errObj;
+                }
+            }
             throw new IOException("Google API error (HTTP " + status + "): " + (err != null ? err : body));
         }
         return map;

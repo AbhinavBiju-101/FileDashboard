@@ -172,6 +172,69 @@ public class GDriveClient {
         return o instanceof String ? (String) o : null;
     }
 
+    // Creates a new, empty folder directly under parentId (typically
+    // "root") and returns its new Drive-assigned id.
+    public static String createFolder(String accountId, String parentId, String name) throws IOException {
+        String token = GDriveAuth.getValidAccessToken(accountId);
+        String body = "{\"name\":\"" + jsonEscape(name) + "\",\"mimeType\":\"" + FOLDER_MIME + "\",\"parents\":[\"" + jsonEscape(parentId) + "\"]}";
+        Map<String, Object> resp = GDriveAuth.postJson("https://www.googleapis.com/drive/v3/files?fields=" + urlEncode("id"), token, body);
+        String id = str(resp.get("id"));
+        if (id == null) throw new IOException("Google didn't return a new folder id.");
+        return id;
+    }
+
+    // Renames a file or folder in place - a plain files.update PATCH with
+    // just the "name" field, no reparenting involved.
+    public static void renameItem(String accountId, String fileId, String newName) throws IOException {
+        String token = GDriveAuth.getValidAccessToken(accountId);
+        String body = "{\"name\":\"" + jsonEscape(newName) + "\"}";
+        GDriveAuth.patchJson("https://www.googleapis.com/drive/v3/files/" + urlEncode(fileId), token, body);
+    }
+
+    // Moves a file/folder to Drive's own trash (trashed:true) - the direct
+    // equivalent of TrashManager.moveToTrash() for local files, except
+    // Drive tracks its own trash server-side rather than this app managing
+    // a trash folder itself, so there's no local TrashManager.Entry/undo-id
+    // to hand back; "restore from Drive trash" isn't wired into this app's
+    // UI (Drive's own web trash already covers that, one click away via
+    // "Open in Google Drive").
+    public static void trashItem(String accountId, String fileId) throws IOException {
+        String token = GDriveAuth.getValidAccessToken(accountId);
+        GDriveAuth.patchJson("https://www.googleapis.com/drive/v3/files/" + urlEncode(fileId), token, "{\"trashed\":true}");
+    }
+
+    // Reparents a file/folder - Drive's files.update takes the new parent
+    // to add and the old one to remove as query params rather than a body
+    // field (a file can technically have multiple parents in Drive's model,
+    // though this app never creates one that way, so removing exactly the
+    // one parent it was browsed under is always correct here).
+    public static void moveItem(String accountId, String fileId, String oldParentId, String newParentId) throws IOException {
+        String token = GDriveAuth.getValidAccessToken(accountId);
+        String url = "https://www.googleapis.com/drive/v3/files/" + urlEncode(fileId)
+              + "?addParents=" + urlEncode(newParentId) + "&removeParents=" + urlEncode(oldParentId);
+        GDriveAuth.patchJson(url, token, "{}");
+    }
+
+    // Drive's own copy endpoint - handles both files and folders, though
+    // folder copies are shallow (Drive doesn't recursively copy children by
+    // default), which is fine here since GDriveOpsHandler.java only offers
+    // "Duplicate" for files, matching local's own Duplicate (which does
+    // recurse for local folders - a gap worth knowing about rather than
+    // silently mismatched, so the menu simply doesn't offer it for Drive
+    // folders at all rather than deep-copying only sometimes).
+    public static String copyItem(String accountId, String fileId, String newName) throws IOException {
+        String token = GDriveAuth.getValidAccessToken(accountId);
+        String body = "{\"name\":\"" + jsonEscape(newName) + "\"}";
+        Map<String, Object> resp = GDriveAuth.postJson("https://www.googleapis.com/drive/v3/files/" + urlEncode(fileId) + "/copy?fields=" + urlEncode("id"), token, body);
+        String id = str(resp.get("id"));
+        if (id == null) throw new IOException("Google didn't return the copy's id.");
+        return id;
+    }
+
+    private static String jsonEscape(String s) {
+        return MiniJson.escape(s);
+    }
+
     private static String urlEncode(String s) {
         try {
             return java.net.URLEncoder.encode(s, "UTF-8");

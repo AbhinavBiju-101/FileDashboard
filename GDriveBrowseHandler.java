@@ -192,12 +192,12 @@ public class GDriveBrowseHandler implements HttpHandler {
                 } else if ("files".equals(only)) {
                     items = filterItems(items, false);
                 }
-                sb.append("<div class='grid'>");
+                sb.append("<div class='grid' data-current-folder-id=\"").append(PathUtil.htmlEscape(currentFolderId)).append("\">");
                 for (GDriveClient.DriveItem item : items) {
                     if (GDriveClient.isFolder(item.mimeType)) {
-                        sb.append(folderCard(crumbs, item, acctQS));
+                        sb.append(folderCard(crumbs, item, acctQS, currentFolderId));
                     } else {
-                        sb.append(fileCard(item, acctQS));
+                        sb.append(fileCard(item, acctQS, currentFolderId));
                     }
                 }
                 if (items.isEmpty()) {
@@ -319,10 +319,10 @@ public class GDriveBrowseHandler implements HttpHandler {
         return webViewLink;
     }
 
-    private String folderCard(List<Crumb> crumbs, GDriveClient.DriveItem item, String acctQS) {
+    private String folderCard(List<Crumb> crumbs, GDriveClient.DriveItem item, String acctQS, String parentId) {
         List<Crumb> withThis = new ArrayList<>(crumbs);
         withThis.add(new Crumb(item.id, item.name));
-        return folderCardForPath(pathFor(withThis, withThis.size() - 1), item.name, item.id, item.webViewLink, acctQS);
+        return folderCardForPath(pathFor(withThis, withThis.size() - 1), item.name, item.id, item.webViewLink, acctQS, parentId);
     }
 
     // Shared by folderCard() above (navigating deeper from a known
@@ -330,24 +330,29 @@ public class GDriveBrowseHandler implements HttpHandler {
     // ancestry - Drive items don't have one true parent path - so it just
     // treats the hit as if it were a fresh top-level breadcrumb of its own,
     // same as GDriveSuggestHandler.java's address-bar jump-to-folder does).
+    // parentId is null/empty for that search-results case too, for the same
+    // reason (Drive items can technically have more than one parent, and
+    // search doesn't say which one is "the" contextually relevant one) -
+    // CONTEXT_MENU_SCRIPT only offers "Move to..." when it's actually set.
     //
     // A plain <div>, not an <a> - matching GridRenderer.folderCard()'s
     // local behavior exactly: a single click just selects the card (see
     // SELECTION_SCRIPT), double-click is what actually navigates (see
     // data-gdrive-navurl, read by CONTEXT_MENU_SCRIPT's shared "open-here"
     // logic).
-    static String folderCardForPath(String path, String rawName, String id, String webViewLink, String acctQS) {
+    static String folderCardForPath(String path, String rawName, String id, String webViewLink, String acctQS, String parentId) {
         String name = PathUtil.htmlEscape(rawName);
         return "<div class=\"card folder\" " +
                "data-gdrive-id=\"" + PathUtil.htmlEscape(id) + "\" data-gdrive-name=\"" + name + "\" " +
                "data-gdrive-kind=\"folder\" data-gdrive-webviewlink=\"" + (webViewLink == null ? "" : PathUtil.htmlEscape(webViewLink)) + "\" " +
+               "data-gdrive-parentid=\"" + (parentId == null ? "" : PathUtil.htmlEscape(parentId)) + "\" " +
                "data-gdrive-navurl=\"/gdrive?path=" + path + acctQS + "\">" +
                "<div class=\"icon\">&#128193;</div>" +
                "<div class=\"name\" title=\"" + name + "\">" + name + "</div>" +
                "</div>";
     }
 
-    static String fileCard(GDriveClient.DriveItem item, String acctQS) {
+    static String fileCard(GDriveClient.DriveItem item, String acctQS, String parentId) {
         String name = PathUtil.htmlEscape(item.name);
         boolean nativeDoc = GDriveClient.isNativeGoogleDoc(item.mimeType);
         String category = categoryFor(item.mimeType, item.name);
@@ -373,6 +378,7 @@ public class GDriveBrowseHandler implements HttpHandler {
           .append("\" data-gdrive-viewable=\"").append(viewable ? "1" : "0")
           .append("\" data-gdrive-textlike=\"").append(textlike ? "1" : "0")
           .append("\" data-gdrive-native=\"").append(nativeDoc ? "1" : "0")
+          .append("\" data-gdrive-parentid=\"").append(parentId == null ? "" : PathUtil.htmlEscape(parentId))
           .append("\">");
 
         // Real thumbnails for images only (matching GridRenderer's own
@@ -661,15 +667,22 @@ public class GDriveBrowseHandler implements HttpHandler {
     // enabled once Drive write support exists.
     static final String CONTEXT_MENU_SCRIPT =
         "<div id='gdriveContextMenu' class='context-menu'></div>" +
+        "<div id='gdriveMovePrompt' class='gdrive-move-prompt'>" +
+          "<div class='gdrive-move-prompt-box'>" +
+            "<div class='gdrive-move-prompt-header'>Move to...<button class='gdrive-picker-close' id='gdriveMovePromptClose' aria-label='Close'>&times;</button></div>" +
+            "<input type='text' id='gdriveMovePromptInput' placeholder='Search for a destination folder...' autocomplete='off'>" +
+            "<div class='gdrive-move-prompt-results' id='gdriveMovePromptResults'></div>" +
+          "</div>" +
+        "</div>" +
         "<script>" +
         "(function(){" +
         "var menu=document.getElementById('gdriveContextMenu');" +
-        "var DISABLED_TITLE='Coming soon - Google Drive is read-only here for now';" +
-        "function closeMenu(){ menu.classList.remove('open'); menu.innerHTML=''; }" +
-        "function menuItem(label, action, enabled){" +
+        "var UPLOAD_DISABLED_TITLE='Not implemented yet - use Google Drive itself to upload, then Refresh here';" +
+        "function menuItem(label, action, enabled, disabledTitle){" +
           "if(enabled){ return '<div class=\"context-menu-item\" data-gdrive-action=\"'+action+'\">'+label+'</div>'; }" +
-          "return '<div class=\"context-menu-item context-menu-item-disabled\" title=\"'+DISABLED_TITLE+'\">'+label+'</div>';" +
+          "return '<div class=\"context-menu-item context-menu-item-disabled\" title=\"'+(disabledTitle||'')+'\">'+label+'</div>';" +
         "}" +
+        "function closeMenu(){ menu.classList.remove('open'); menu.innerHTML=''; }" +
         "function openMenuAt(x, y, html){" +
           "menu.innerHTML=html;" +
           "menu.style.left=x+'px';" +
@@ -679,6 +692,12 @@ public class GDriveBrowseHandler implements HttpHandler {
           "if(rect.right>window.innerWidth){ menu.style.left=Math.max(0,x-rect.width)+'px'; }" +
           "if(rect.bottom>window.innerHeight){ menu.style.top=Math.max(0,y-rect.height)+'px'; }" +
         "}" +
+        // Reads selection off the DOM (.card.selected) rather than
+        // SELECTION_SCRIPT's own selectedIds array - that array lives
+        // inside SELECTION_SCRIPT's own separate IIFE closure and was
+        // never exposed globally, but both scripts already share the same
+        // DOM, which is the simpler cross-script bridge.
+        "function selectedCards(){ return Array.prototype.slice.call(document.querySelectorAll('.card.selected[data-gdrive-id]')); }" +
         "document.addEventListener('contextmenu', function(e){" +
           "var card=e.target.closest('.card[data-gdrive-id]');" +
           "if(card){" +
@@ -687,38 +706,54 @@ public class GDriveBrowseHandler implements HttpHandler {
               "document.querySelectorAll('.card.selected').forEach(function(c){c.classList.remove('selected');});" +
               "card.classList.add('selected');" +
             "}" +
+            "var selected=selectedCards();" +
+            "if(selected.length>1){" +
+              "var anyMissingParent=selected.some(function(c){ return !c.dataset.gdriveParentid; });" +
+              "var items=[];" +
+              "items.push(menuItem('Move '+selected.length+' items to...', 'move-selection', !anyMissingParent, 'Not available from search results'));" +
+              "items.push(menuItem('Delete '+selected.length+' items', 'delete-selection', true));" +
+              "items.push('<div class=\"context-menu-divider\"></div>');" +
+              "items.push(menuItem('Refresh', 'refresh', true));" +
+              "menu.dataset.gdriveTargetCardId='';" +
+              "openMenuAt(e.clientX, e.clientY, items.join(''));" +
+              "return;" +
+            "}" +
             "var kind=card.dataset.gdriveKind;" +
             "var webViewLink=card.dataset.gdriveWebviewlink;" +
             "var viewable=card.dataset.gdriveViewable==='1';" +
             "var ext=gdriveExtOf(card.dataset.gdriveName||'');" +
             "var textlike=card.dataset.gdriveTextlike==='1';" +
             "var isNative=card.dataset.gdriveNative==='1';" +
+            "var hasParent=!!card.dataset.gdriveParentid;" +
             "var items=[];" +
             "if(kind==='folder'){ items.push(menuItem('Open', 'open-here', true)); }" +
             "else if(viewable){ items.push(menuItem('Preview', 'preview', true)); }" +
             "if(webViewLink){ items.push(menuItem('Open in Google Drive', 'open-external', true)); }" +
             "if(kind==='file' && (ext==='pdf'||textlike||isNative)){ items.push(menuItem('Open Viewer', 'open-viewer', true)); }" +
             "if(kind==='file' && card.dataset.gdriveDownloadurl){ items.push(menuItem('Download', 'download', true)); }" +
+            "if(kind==='file' && !isNative){ items.push(menuItem('Duplicate', 'duplicate', true)); }" +
             "if(webViewLink){ items.push(menuItem('Copy link', 'copy-link', true)); }" +
             "items.push('<div class=\"context-menu-divider\"></div>');" +
-            "items.push(menuItem('Rename', 'rename', false));" +
-            "items.push(menuItem('Move to...', 'move', false));" +
-            "items.push(menuItem('Delete', 'delete', false));" +
+            "items.push(menuItem('Rename', 'rename', true));" +
+            "items.push(menuItem('Move to...', 'move', hasParent, 'Not available from search results'));" +
+            "items.push(menuItem('Delete', 'delete', true));" +
             "items.push('<div class=\"context-menu-divider\"></div>');" +
             "items.push(menuItem('Refresh', 'refresh', true));" +
             "menu.dataset.gdriveTargetCardId=card.dataset.gdriveId+'|'+kind;" +
             "openMenuAt(e.clientX, e.clientY, items.join(''));" +
             "return;" +
           "}" +
-          "if(e.target.closest('.grid')){" +
+          "var grid=e.target.closest('.grid[data-current-folder-id]');" +
+          "if(grid){" +
             "e.preventDefault();" +
             "var emptyItems=[" +
-              "menuItem('New folder', 'new-folder', false)," +
-              "menuItem('Upload here', 'upload', false)," +
+              "menuItem('New folder', 'new-folder', true)," +
+              "menuItem('Upload here', 'upload', false, UPLOAD_DISABLED_TITLE)," +
               "'<div class=\"context-menu-divider\"></div>'," +
               "menuItem('Refresh', 'refresh', true)" +
             "];" +
             "menu.dataset.gdriveTargetCardId='';" +
+            "menu.dataset.gdriveGridFolderId=grid.dataset.currentFolderId;" +
             "openMenuAt(e.clientX, e.clientY, emptyItems.join(''));" +
           "}" +
         "});" +
@@ -737,15 +772,114 @@ public class GDriveBrowseHandler implements HttpHandler {
           "}" +
           "else if(action==='open-external' && card){ window.open(card.dataset.gdriveWebviewlink,'_blank','noopener'); }" +
           "else if(action==='download' && card){ location.href=card.dataset.gdriveDownloadurl; }" +
+          "else if(action==='duplicate' && card){ gdriveDuplicate(card.dataset.gdriveId); }" +
           "else if(action==='copy-link' && card){" +
             "if(navigator.clipboard){ navigator.clipboard.writeText(card.dataset.gdriveWebviewlink).catch(function(){}); }" +
           "}" +
+          "else if(action==='rename' && card){ gdriveRename(card.dataset.gdriveId, card.dataset.gdriveName); }" +
+          "else if(action==='delete' && card){ gdriveDelete([card.dataset.gdriveId], card.dataset.gdriveName); }" +
+          "else if(action==='move' && card){ gdriveOpenMovePrompt([card.dataset.gdriveId], [card.dataset.gdriveParentid]); }" +
+          "else if(action==='move-selection'){" +
+            "var cards=selectedCards();" +
+            "gdriveOpenMovePrompt(cards.map(function(c){return c.dataset.gdriveId;}), cards.map(function(c){return c.dataset.gdriveParentid;}));" +
+          "}" +
+          "else if(action==='delete-selection'){" +
+            "var cards=selectedCards();" +
+            "gdriveDelete(cards.map(function(c){return c.dataset.gdriveId;}), cards.length+' items');" +
+          "}" +
+          "else if(action==='new-folder'){ gdriveNewFolder(menu.dataset.gdriveGridFolderId); }" +
           "else if(action==='refresh'){ location.reload(); }" +
           "closeMenu();" +
         "});" +
         "document.addEventListener('click', function(e){ if(!e.target.closest('.context-menu')){ closeMenu(); } });" +
         "document.addEventListener('scroll', closeMenu, true);" +
         "window.addEventListener('blur', closeMenu);" +
+
+        // ---- Write operations (POST /gdrive-ops - see GDriveOpsHandler.java) ----
+        // Simple prompt()/confirm()-driven, not the richer inline-rename/
+        // undo-toast UX PageScripts.java's local equivalent has - a
+        // deliberate scope cut given how much newer ground this whole
+        // Drive integration already covers; the underlying operations
+        // (rename/delete/move/duplicate/create-folder) are fully wired
+        // either way, just with plainer confirmation dialogs for now.
+        "function gdriveOpsCall(params){" +
+          "params.account=GDRIVE_ACCOUNT||'';" +
+          "return fetch('/gdrive-ops',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(params).toString()}).then(function(r){return r.json();});" +
+        "}" +
+        "function gdriveRename(id, currentName){" +
+          "var newName=prompt('Rename to:', currentName);" +
+          "if(newName===null || newName.trim()==='' || newName===currentName) return;" +
+          "gdriveOpsCall({action:'rename', id:id, newName:newName}).then(function(res){" +
+            "if(!res.success){ alert(res.message); return; }" +
+            "location.reload();" +
+          "});" +
+        "}" +
+        "function gdriveDuplicate(id){" +
+          "gdriveOpsCall({action:'duplicate', id:id}).then(function(res){" +
+            "if(!res.success){ alert(res.message); return; }" +
+            "location.reload();" +
+          "});" +
+        "}" +
+        "function gdriveDelete(ids, label){" +
+          "if(!confirm('Move '+label+' to Google Drive\\'s trash?')) return;" +
+          "Promise.all(ids.map(function(id){ return gdriveOpsCall({action:'delete', id:id}); })).then(function(results){" +
+            "var failed=results.filter(function(r){return !r.success;});" +
+            "if(failed.length){ alert('Some items could not be deleted: '+failed.map(function(r){return r.message;}).join('; ')); }" +
+            "location.reload();" +
+          "});" +
+        "}" +
+        "function gdriveNewFolder(parentId){" +
+          "var name=prompt('New folder name:', 'New folder');" +
+          "if(name===null || name.trim()==='') return;" +
+          "gdriveOpsCall({action:'create-folder', parentId:parentId||'root', newName:name}).then(function(res){" +
+            "if(!res.success){ alert(res.message); return; }" +
+            "location.reload();" +
+          "});" +
+        "}" +
+
+        // ---- "Move to..." destination picker - a lightweight live-search ----
+        // rather than a full folder-tree browser (see local's move modal),
+        // reusing the same /gdrive-suggest?foldersOnly=1 endpoint the
+        // address bar's own folder search already relies on.
+        "var gdriveMoveTargetIds=[], gdriveMoveTargetParents=[];" +
+        "function gdriveOpenMovePrompt(ids, parentIds){" +
+          "gdriveMoveTargetIds=ids; gdriveMoveTargetParents=parentIds;" +
+          "document.getElementById('gdriveMovePrompt').classList.add('open');" +
+          "var input=document.getElementById('gdriveMovePromptInput');" +
+          "input.value=''; input.focus();" +
+          "document.getElementById('gdriveMovePromptResults').innerHTML='';" +
+        "}" +
+        "function gdriveCloseMovePrompt(){ document.getElementById('gdriveMovePrompt').classList.remove('open'); }" +
+        "document.getElementById('gdriveMovePromptClose').addEventListener('click', gdriveCloseMovePrompt);" +
+        "document.getElementById('gdriveMovePrompt').addEventListener('click', function(e){ if(e.target===this) gdriveCloseMovePrompt(); });" +
+        "var gdriveMoveDebounce=null;" +
+        "document.getElementById('gdriveMovePromptInput').addEventListener('input', function(){" +
+          "var q=this.value.trim();" +
+          "clearTimeout(gdriveMoveDebounce);" +
+          "var results=document.getElementById('gdriveMovePromptResults');" +
+          "if(!q){ results.innerHTML=''; return; }" +
+          "gdriveMoveDebounce=setTimeout(function(){" +
+            "fetch('/gdrive-suggest?q='+encodeURIComponent(q)+'&foldersOnly=1'+gdriveAcctQS()).then(function(r){return r.json();}).then(function(items){" +
+              "if(!items.length){ results.innerHTML=\"<div class='gdrive-move-prompt-empty'>No matching folders</div>\"; return; }" +
+              "results.innerHTML=items.map(function(it){" +
+                "return \"<div class='gdrive-move-prompt-item' data-id='\"+it.id+\"'>&#128193; \"+it.name+\"</div>\";" +
+              "}).join('');" +
+            "}).catch(function(){});" +
+          "}, 200);" +
+        "});" +
+        "document.getElementById('gdriveMovePromptResults').addEventListener('click', function(e){" +
+          "var row=e.target.closest('.gdrive-move-prompt-item');" +
+          "if(!row) return;" +
+          "var destId=row.dataset.id;" +
+          "gdriveCloseMovePrompt();" +
+          "Promise.all(gdriveMoveTargetIds.map(function(id,i){" +
+            "return gdriveOpsCall({action:'move', id:id, oldParentId:gdriveMoveTargetParents[i]||'', destId:destId});" +
+          "})).then(function(results){" +
+            "var failed=results.filter(function(r){return !r.success;});" +
+            "if(failed.length){ alert('Some items could not be moved: '+failed.map(function(r){return r.message;}).join('; ')); }" +
+            "location.reload();" +
+          "});" +
+        "});" +
         "})();" +
         "</script>";
 

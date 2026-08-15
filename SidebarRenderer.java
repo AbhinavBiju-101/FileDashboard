@@ -71,6 +71,14 @@ public class SidebarRenderer {
         }
         sb.append(item("/gdrive?path=&only=folders", "&#128193;", "Home folders", "sidebar-mode-drive"));
         sb.append(item("/gdrive?path=&only=files", "&#128196;", "Home files", "sidebar-mode-drive"));
+        // Filled in dynamically by ShellScript.java's shellApplyDriveSidebar()
+        // once it knows which Google account is active (see
+        // GDriveOnboardingHandler.java) - can't be rendered here since this
+        // whole sidebar is static markup shared by every tab/session
+        // regardless of which Drive account (if any) is currently open.
+        // Already carries sidebar-mode-drive itself so it never needs its
+        // own show/hide logic beyond what the two rows above already get.
+        sb.append("<div id='sidebarDriveOnboardingFolders' class='sidebar-mode-drive'></div>");
 
         sb.append("<div class='sidebar-divider'></div>");
         sb.append(item("/settings", "&#9881;", "Settings", null));

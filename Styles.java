@@ -301,6 +301,34 @@ public class Styles {
         ".gdrive-picker-row-email{font-size:12px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}" +
         ".gdrive-picker-add{border:none;border-top:1px solid #eee;background:#fafbfc;padding:12px 16px;font-size:13px;color:#2563eb;cursor:pointer;text-align:left;}" +
         ".gdrive-picker-add:hover{background:#f0f5ff;}" +
+        // "Move to..." destination picker (see GDriveBrowseHandler.java's
+        // CONTEXT_MENU_SCRIPT) - same overlay/box shape as the account
+        // picker just above, its own class names since it's a different
+        // widget (a live-search list, not a fixed account list) rendered
+        // on the Drive browse/search page itself rather than in the shell.
+        ".gdrive-move-prompt{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1600;align-items:center;justify-content:center;}" +
+        ".gdrive-move-prompt.open{display:flex;}" +
+        ".gdrive-move-prompt-box{background:#fff;border-radius:10px;width:340px;max-width:90vw;overflow:hidden;}" +
+        ".gdrive-move-prompt-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;font-size:14px;font-weight:600;border-bottom:1px solid #eee;}" +
+        "#gdriveMovePromptInput{width:100%;box-sizing:border-box;border:none;border-bottom:1px solid #eee;padding:12px 16px;font-size:13px;outline:none;}" +
+        ".gdrive-move-prompt-results{max-height:240px;overflow-y:auto;}" +
+        ".gdrive-move-prompt-item{padding:10px 16px;cursor:pointer;font-size:13px;color:#222;}" +
+        ".gdrive-move-prompt-item:hover{background:#f0f5ff;}" +
+        ".gdrive-move-prompt-empty{padding:16px;color:#888;font-size:13px;text-align:center;}" +
+        // Drive onboarding prompt (see ShellScript.java's
+        // shellOpenDriveOnboardingPrompt()) - reuses .gdrive-picker-box/
+        // .gdrive-picker-header's shape (same overlay class too) with its
+        // own wider box and extra rows/actions.
+        ".gdrive-onboarding-box{width:380px;}" +
+        ".gdrive-onboarding-desc{padding:0 16px;margin:10px 0;font-size:13px;color:#666;line-height:1.5;}" +
+        ".gdrive-onboarding-rows{padding:4px 16px 8px;display:flex;flex-direction:column;gap:8px;}" +
+        ".gdrive-onboarding-row{display:flex;align-items:center;gap:8px;font-size:13px;color:#333;cursor:pointer;}" +
+        ".gdrive-onboarding-actions{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-top:1px solid #eee;gap:10px;}" +
+        ".gdrive-onboarding-skip{background:none;border:none;color:#666;font-size:13px;cursor:pointer;padding:0;}" +
+        ".gdrive-onboarding-skip:hover{color:#333;text-decoration:underline;}" +
+        ".gdrive-onboarding-create{background:#2563eb;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer;}" +
+        ".gdrive-onboarding-create:hover{background:#1d4ed8;}" +
+        ".gdrive-onboarding-create:disabled{opacity:.6;cursor:default;}" +
         // Type-filter chips
         ".filter-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}" +
         ".chip{padding:5px 12px;border-radius:14px;background:#eef0f2;color:#555;font-size:12px;cursor:pointer;}" +

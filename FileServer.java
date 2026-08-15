@@ -82,6 +82,8 @@ public class FileServer {
         addContext(server, "/gdrive-suggest", new GDriveSuggestHandler());
         addContext(server, "/gdrive-viewer", new GDriveViewerHandler());
         addContext(server, "/gdrive-accounts", new GDriveAccountsHandler());
+        addContext(server, "/gdrive-ops", new GDriveOpsHandler());
+        addContext(server, "/gdrive-onboarding", new GDriveOnboardingHandler());
         addContext(server, "/viewer", new ViewerHandler());
         addContext(server, "/save-text", new SaveTextHandler());
         addContext(server, "/reveal", new RevealHandler());
