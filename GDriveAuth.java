@@ -10,7 +10,11 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Base64;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,26 +25,36 @@ import java.util.concurrent.ConcurrentHashMap;
  * as Settings.java's settings.json, kept as a separate file since it holds
  * credentials rather than app preferences).
  *
- * One combined consent flow handles both identity and Drive access - the
- * requested scope includes openid/email/profile alongside drive.readonly,
- * so the single userinfo call completeAuth() makes after the token exchange
- * returns a name and profile picture too, not just an email. (An earlier
- * version of this split "sign in" and "connect Drive" into two separate
- * flows/buttons. That added a second consent screen and a second OAuth
- * client-type requirement - Google Identity Services' Sign In button needs
- * a "Web application" client with a JavaScript origin, which unlike a
- * "Desktop app" client requires a Client Secret - without actually reducing
- * the Google Cloud Console setup work, which is the same either way. Merged
- * back into one flow, one Desktop app client, no Secret needed.)
+ * Supports any number of simultaneously-connected Google accounts (see
+ * Account below) rather than a single global one - each is independent:
+ * its own tokens, its own name/email/picture, connected and disconnected
+ * separately from Settings' "Connected accounts" list. A Google Drive
+ * session (see ShellScript.java) picks one by id when it's created and
+ * keeps using that same one; GDriveClient.java's calls all take an
+ * accountId parameter for exactly this reason - there's no single "the"
+ * token anymore.
+ *
+ * One combined consent flow handles both identity and Drive access per
+ * account - the requested scope includes openid/email/profile alongside
+ * drive.readonly, so the single userinfo call completeAuth() makes after
+ * the token exchange returns a name and profile picture too, not just an
+ * email. (An earlier version of this split "sign in" and "connect Drive"
+ * into two separate flows/buttons. That added a second consent screen and a
+ * second OAuth client-type requirement - Google Identity Services' Sign In
+ * button needs a "Web application" client with a JavaScript origin, which
+ * unlike a "Desktop app" client requires a Client Secret - without actually
+ * reducing the Google Cloud Console setup work, which is the same either
+ * way. Merged back into one flow, one Desktop app client, no Secret needed.)
  *
  * This app has no server backend and no bundled client secret of its own -
  * connecting requires the person to create their own Google Cloud OAuth
  * client (Settings has the walkthrough + the exact redirect URI to
- * register) and paste its Client ID in. The flow uses PKCE, which is what
- * lets an installed/desktop app the size of this one skip needing to treat
- * the paired Client Secret as truly confidential - Google still issues one
- * for "Desktop app" client types, and it's accepted here if provided, but
- * it's not required to keep the flow secure.
+ * register) and paste its Client ID in, once, shared by every account
+ * connected through it. The flow uses PKCE, which is what lets an
+ * installed/desktop app the size of this one skip needing to treat the
+ * paired Client Secret as truly confidential - Google still issues one for
+ * "Desktop app" client types, and it's accepted here if provided, but it's
+ * not required to keep the flow secure.
  *
  * IMPORTANT: none of this has been exercised against real Google endpoints
  * - there's no network access to google.com in the sandbox this was
@@ -64,19 +78,42 @@ public class GDriveAuth {
 
     private static volatile String clientId = null;
     private static volatile String clientSecret = null;
-    private static volatile String accessToken = null;
-    private static volatile String refreshToken = null;
-    private static volatile long expiresAtMillis = 0;
-    private static volatile String email = null;
-    private static volatile String name = null;
-    private static volatile String picture = null;
 
-    // Short-lived, in-memory only: state -> PKCE code_verifier, for the
-    // handful of seconds between redirecting to Google and it redirecting
-    // back to /gauth/callback. Never persisted - there's no reason a token
-    // exchange should still be pending after a server restart, and holding
-    // it in memory means a stale entry just quietly stops mattering rather
-    // than needing explicit cleanup.
+    /** One connected Google account's tokens + display info. */
+    public static class Account {
+        public final String id;
+        public String email;
+        public String name;
+        public String picture;
+        public volatile String accessToken;
+        public volatile String refreshToken;
+        public volatile long expiresAtMillis;
+        Account(String id) { this.id = id; }
+    }
+
+    /** Read-only display info handed out to callers outside this class - never carries tokens. */
+    public static class AccountInfo {
+        public final String id, email, name, picture;
+        public AccountInfo(String id, String email, String name, String picture) {
+            this.id = id; this.email = email; this.name = name; this.picture = picture;
+        }
+        public String displayName() { return name != null ? name : (email != null ? email : "(unknown account)"); }
+    }
+
+    // Keyed by our own generated account id, not Google's - see connect()'s
+    // dedupe-by-email logic for why a stable id independent of email is
+    // useful (an email is how we recognize "you already connected this
+    // one", but the id is what everything else - sessions, URLs - remembers
+    // long-term).
+    private static final Map<String, Account> accounts = new LinkedHashMap<>();
+
+    // Short-lived, in-memory only: state -> PKCE code_verifier (+ which
+    // flow kicked it off), for the handful of seconds between redirecting
+    // to Google and it redirecting back to /gauth/callback. Never
+    // persisted - there's no reason a token exchange should still be
+    // pending after a server restart, and holding it in memory means a
+    // stale entry just quietly stops mattering rather than needing
+    // explicit cleanup.
     private static final Map<String, PendingAuth> pending = new ConcurrentHashMap<>();
     private static final long PENDING_TTL_MS = 10 * 60 * 1000;
 
@@ -84,6 +121,23 @@ public class GDriveAuth {
         final String verifier;
         final long createdAt;
         PendingAuth(String verifier) { this.verifier = verifier; this.createdAt = System.currentTimeMillis(); }
+    }
+
+    public static class AuthResult {
+        public final String accountId;
+        public AuthResult(String accountId) { this.accountId = accountId; }
+    }
+
+    // Pulled straight out of the "state" query param on the callback -
+    // works even in early-exit error paths (denied/cancelled) where
+    // completeAuth() never runs, since it's plain string parsing rather
+    // than a pending-map lookup. Falls back to "settings" for a
+    // missing/malformed state, matching the default beginAuth() itself
+    // uses for an unrecognized/absent context.
+    public static String contextFromState(String state) {
+        if (state == null) return "settings";
+        int i = state.indexOf('~');
+        return i == -1 ? "settings" : state.substring(0, i);
     }
 
     static {
@@ -94,20 +148,39 @@ public class GDriveAuth {
         return clientId != null && !clientId.trim().isEmpty();
     }
 
-    public static synchronized boolean isConnected() {
-        return refreshToken != null && !refreshToken.isEmpty();
+    public static synchronized boolean hasAnyAccount() {
+        return !accounts.isEmpty();
     }
 
-    public static synchronized String getEmail() {
-        return email;
+    // Sorted by display name/email so Settings and the account picker show
+    // a stable, predictable order rather than insertion/connection order.
+    public static synchronized List<AccountInfo> listAccounts() {
+        List<AccountInfo> out = new ArrayList<>();
+        for (Account a : accounts.values()) {
+            out.add(new AccountInfo(a.id, a.email, a.name, a.picture));
+        }
+        out.sort(Comparator.comparing(a -> a.displayName().toLowerCase()));
+        return out;
     }
 
-    public static synchronized String getName() {
-        return name;
+    public static synchronized AccountInfo getAccountInfo(String accountId) {
+        Account a = accounts.get(accountId);
+        return a == null ? null : new AccountInfo(a.id, a.email, a.name, a.picture);
     }
 
-    public static synchronized String getPicture() {
-        return picture;
+    // Used by every Drive-facing handler to turn a possibly-missing/stale
+    // "account" query param into an actual account to browse as: the
+    // requested one if it's still connected, otherwise a reasonable
+    // fallback (the first connected account, alphabetically) rather than
+    // failing outright - covers old bookmarked/saved-session URLs from
+    // before a session remembered which account it used, and the odd case
+    // of an account being disconnected out from under a session that's
+    // still pointed at it. Returns null only when no account is connected
+    // at all.
+    public static synchronized String resolveAccount(String requestedId) {
+        if (requestedId != null && accounts.containsKey(requestedId)) return requestedId;
+        List<AccountInfo> all = listAccounts();
+        return all.isEmpty() ? null : all.get(0).id;
     }
 
     public static synchronized String getClientId() {
@@ -128,13 +201,8 @@ public class GDriveAuth {
         save();
     }
 
-    public static synchronized void disconnect() {
-        accessToken = null;
-        refreshToken = null;
-        expiresAtMillis = 0;
-        email = null;
-        name = null;
-        picture = null;
+    public static synchronized void disconnect(String accountId) {
+        accounts.remove(accountId);
         save();
     }
 
@@ -142,11 +210,24 @@ public class GDriveAuth {
 
     // Starts the flow: mints a PKCE verifier/challenge pair and a random
     // state token, remembers the verifier under that state, and returns the
-    // full Google consent-screen URL to redirect the browser to.
-    public static String beginAuth() throws IOException {
+    // full Google consent-screen URL to redirect the browser to. Adding a
+    // second (or third...) account works exactly the same way as the first
+    // - "prompt=consent" always shows the account chooser + consent screen
+    // rather than silently reusing whatever Google session cookie the
+    // browser already has, so picking a different account to connect is
+    // always possible, not just the first time.
+    //
+    // context is opaque to this class - it's folded into the state token
+    // itself (rather than tracked here) purely so GoogleAuthHandler.java's
+    // callback can tell which of its two return-trip behaviors to use
+    // (redirect back to the Settings page vs. a self-closing popup page for
+    // the account picker) without this class needing to expose anything
+    // extra to look it up. See GoogleAuthHandler's class comment.
+    public static String beginAuth(String context) throws IOException {
         if (!isConfigured()) throw new IOException("Google Drive isn't configured yet - add a Client ID in Settings first.");
         cleanupPending();
-        String state = randomUrlSafe(24);
+        String safeContext = (context == null || context.indexOf('~') != -1) ? "settings" : context;
+        String state = safeContext + "~" + randomUrlSafe(24);
         String verifier = randomUrlSafe(64);
         String challenge = codeChallenge(verifier);
         pending.put(state, new PendingAuth(verifier));
@@ -157,7 +238,7 @@ public class GDriveAuth {
         url.append("&response_type=code");
         url.append("&scope=").append(urlEncode(SCOPE));
         url.append("&access_type=offline");
-        url.append("&prompt=consent");
+        url.append("&prompt=").append(urlEncode("consent select_account"));
         url.append("&state=").append(urlEncode(state));
         url.append("&code_challenge=").append(urlEncode(challenge));
         url.append("&code_challenge_method=S256");
@@ -165,10 +246,13 @@ public class GDriveAuth {
     }
 
     // Finishes the flow: exchanges the authorization code for tokens (using
-    // the verifier stashed under this state by beginAuth()), then fetches
-    // the connected account's name/email/picture so Settings has something
-    // human to show instead of just "Connected".
-    public static synchronized void completeAuth(String code, String state) throws IOException {
+    // the verifier stashed under this state by beginAuth()), fetches the
+    // connected account's name/email/picture, then upserts it into the
+    // accounts map - keyed by matching email if this exact Google account
+    // was already connected before (refreshing its tokens in place rather
+    // than creating a confusing duplicate entry), or a freshly generated id
+    // otherwise. Returns the id of whichever account this connected/updated.
+    public static synchronized AuthResult completeAuth(String code, String state) throws IOException {
         PendingAuth p = pending.remove(state);
         if (p == null) {
             throw new IOException("That connection link expired or was already used - try connecting again.");
@@ -182,64 +266,85 @@ public class GDriveAuth {
         form.put("redirect_uri", redirectUri());
 
         Map<String, Object> resp = postForm("https://oauth2.googleapis.com/token", form);
-        applyTokenResponse(resp);
+        String accessToken = str(resp.get("access_token"));
+        if (accessToken == null) {
+            Object err = resp.get("error_description");
+            throw new IOException("Google didn't return an access token" + (err != null ? (": " + err) : "."));
+        }
+        String refreshToken = str(resp.get("refresh_token"));
+        Object exp = resp.get("expires_in");
+        long expiresIn = (exp instanceof Double) ? ((Double) exp).longValue() : 3600;
+        long expiresAtMillis = System.currentTimeMillis() + expiresIn * 1000;
 
+        String email = null, name = null, picture = null;
         try {
-            Map<String, Object> info = getJson("https://www.googleapis.com/oauth2/v2/userinfo",
-                accessToken);
-            Object em = info.get("email");
-            if (em instanceof String) email = (String) em;
-            Object nm = info.get("name");
-            if (nm instanceof String) name = (String) nm;
-            Object pic = info.get("picture");
-            if (pic instanceof String) picture = (String) pic;
+            Map<String, Object> info = getJson("https://www.googleapis.com/oauth2/v2/userinfo", accessToken);
+            email = str(info.get("email"));
+            name = str(info.get("name"));
+            picture = str(info.get("picture"));
         } catch (IOException e) {
             // Not fatal - the connection itself succeeded, we just won't
-            // have a friendly name/email/picture to display. Settings
-            // falls back to plain "Connected" in that case.
-            email = null;
-            name = null;
-            picture = null;
+            // have a friendly name/picture to display for it.
         }
+
+        Account existing = email == null ? null : findByEmail(email);
+        Account account = existing != null ? existing : new Account(randomUrlSafe(12));
+        account.email = email;
+        account.name = name;
+        account.picture = picture;
+        account.accessToken = accessToken;
+        // Google only returns a refresh_token on the very first consent for
+        // a given client+account; reconnecting an already-connected account
+        // (e.g. after a scope change) may not get a new one, so keep the
+        // old one rather than clobbering it with null.
+        if (refreshToken != null) account.refreshToken = refreshToken;
+        account.expiresAtMillis = expiresAtMillis;
+        accounts.put(account.id, account);
         save();
+        return new AuthResult(account.id);
     }
 
-    // Returns a currently-usable access token, transparently refreshing it
-    // first if it's missing or close to expiry. Every Drive API call in
-    // GDriveClient.java goes through this rather than reading accessToken
-    // directly.
-    public static synchronized String getValidAccessToken() throws IOException {
-        if (!isConnected()) throw new IOException("Google Drive isn't connected - connect it from Settings first.");
-        if (accessToken == null || System.currentTimeMillis() > (expiresAtMillis - 60_000)) {
-            refresh();
+    private static Account findByEmail(String email) {
+        for (Account a : accounts.values()) {
+            if (email.equalsIgnoreCase(a.email)) return a;
         }
-        return accessToken;
+        return null;
     }
 
-    private static void refresh() throws IOException {
+    // Returns a currently-usable access token for this account,
+    // transparently refreshing it first if it's missing or close to
+    // expiry. Every Drive API call in GDriveClient.java goes through this
+    // rather than reading an Account's accessToken directly.
+    public static synchronized String getValidAccessToken(String accountId) throws IOException {
+        Account a = accounts.get(accountId);
+        if (a == null || a.refreshToken == null || a.refreshToken.isEmpty()) {
+            throw new IOException("That Google account isn't connected - connect it from Settings first.");
+        }
+        if (a.accessToken == null || System.currentTimeMillis() > (a.expiresAtMillis - 60_000)) {
+            refresh(a);
+        }
+        return a.accessToken;
+    }
+
+    private static void refresh(Account a) throws IOException {
         Map<String, String> form = new HashMap<>();
         form.put("client_id", clientId);
         if (clientSecret != null) form.put("client_secret", clientSecret);
-        form.put("refresh_token", refreshToken);
+        form.put("refresh_token", a.refreshToken);
         form.put("grant_type", "refresh_token");
         Map<String, Object> resp = postForm("https://oauth2.googleapis.com/token", form);
-        applyTokenResponse(resp);
-        save();
-    }
-
-    @SuppressWarnings("unchecked")
-    private static void applyTokenResponse(Map<String, Object> resp) throws IOException {
         Object at = resp.get("access_token");
         if (!(at instanceof String)) {
             Object err = resp.get("error_description");
             throw new IOException("Google didn't return an access token" + (err != null ? (": " + err) : "."));
         }
-        accessToken = (String) at;
+        a.accessToken = (String) at;
         Object rt = resp.get("refresh_token");
-        if (rt instanceof String) refreshToken = (String) rt; // only present on the very first exchange, usually
+        if (rt instanceof String) a.refreshToken = (String) rt;
         Object exp = resp.get("expires_in");
         long expiresIn = (exp instanceof Double) ? ((Double) exp).longValue() : 3600;
-        expiresAtMillis = System.currentTimeMillis() + expiresIn * 1000;
+        a.expiresAtMillis = System.currentTimeMillis() + expiresIn * 1000;
+        save();
     }
 
     private static void cleanupPending() {
@@ -333,9 +438,13 @@ public class GDriveAuth {
         }
     }
 
+    private static String str(Object o) {
+        return o instanceof String ? (String) o : null;
+    }
+
     // ---------- Persistence ----------
     // Same atomic-temp-file-then-move pattern as Settings.java. This file
-    // holds real credentials (refresh token especially), so it's worth
+    // holds real credentials (refresh tokens especially), so it's worth
     // calling out that - unlike settings.json - it's not something to
     // casually share or commit anywhere.
 
@@ -346,12 +455,20 @@ public class GDriveAuth {
             sb.append("{\n");
             sb.append("  \"clientId\": ").append(jsonStr(clientId)).append(",\n");
             sb.append("  \"clientSecret\": ").append(jsonStr(clientSecret)).append(",\n");
-            sb.append("  \"accessToken\": ").append(jsonStr(accessToken)).append(",\n");
-            sb.append("  \"refreshToken\": ").append(jsonStr(refreshToken)).append(",\n");
-            sb.append("  \"expiresAtMillis\": ").append(expiresAtMillis).append(",\n");
-            sb.append("  \"email\": ").append(jsonStr(email)).append(",\n");
-            sb.append("  \"name\": ").append(jsonStr(name)).append(",\n");
-            sb.append("  \"picture\": ").append(jsonStr(picture)).append("\n");
+            sb.append("  \"accounts\": [\n");
+            int i = 0, total = accounts.size();
+            for (Account a : accounts.values()) {
+                sb.append("    {\n");
+                sb.append("      \"id\": ").append(jsonStr(a.id)).append(",\n");
+                sb.append("      \"email\": ").append(jsonStr(a.email)).append(",\n");
+                sb.append("      \"name\": ").append(jsonStr(a.name)).append(",\n");
+                sb.append("      \"picture\": ").append(jsonStr(a.picture)).append(",\n");
+                sb.append("      \"accessToken\": ").append(jsonStr(a.accessToken)).append(",\n");
+                sb.append("      \"refreshToken\": ").append(jsonStr(a.refreshToken)).append(",\n");
+                sb.append("      \"expiresAtMillis\": ").append(a.expiresAtMillis).append("\n");
+                sb.append("    }").append(++i < total ? "," : "").append("\n");
+            }
+            sb.append("  ]\n");
             sb.append("}\n");
 
             Path tempFile = Files.createTempFile(Config.DATA_DIR.toPath(), "gdrive", ".tmp");
@@ -368,6 +485,12 @@ public class GDriveAuth {
         return s == null ? "null" : "\"" + MiniJson.escape(s) + "\"";
     }
 
+    // Understands both the current multi-account format ("accounts": [...])
+    // and the older single-account format this file used to be saved in
+    // (bare accessToken/refreshToken/email/name/picture at the top level) -
+    // any existing gdrive.json from before this app supported more than one
+    // account still loads correctly, migrated in-memory into a one-entry
+    // accounts list on first save after this update.
     @SuppressWarnings("unchecked")
     private static void load() {
         if (!CONFIG_FILE.exists()) return;
@@ -379,12 +502,36 @@ public class GDriveAuth {
             Object v;
             v = root.get("clientId"); clientId = (v instanceof String) ? (String) v : null;
             v = root.get("clientSecret"); clientSecret = (v instanceof String) ? (String) v : null;
-            v = root.get("accessToken"); accessToken = (v instanceof String) ? (String) v : null;
-            v = root.get("refreshToken"); refreshToken = (v instanceof String) ? (String) v : null;
-            v = root.get("expiresAtMillis"); expiresAtMillis = (v instanceof Double) ? ((Double) v).longValue() : 0;
-            v = root.get("email"); email = (v instanceof String) ? (String) v : null;
-            v = root.get("name"); name = (v instanceof String) ? (String) v : null;
-            v = root.get("picture"); picture = (v instanceof String) ? (String) v : null;
+
+            Object accountsObj = root.get("accounts");
+            if (accountsObj instanceof List) {
+                for (Object o : (List<Object>) accountsObj) {
+                    if (!(o instanceof Map)) continue;
+                    Map<String, Object> m = (Map<String, Object>) o;
+                    String id = str(m.get("id"));
+                    if (id == null) continue;
+                    Account a = new Account(id);
+                    a.email = str(m.get("email"));
+                    a.name = str(m.get("name"));
+                    a.picture = str(m.get("picture"));
+                    a.accessToken = str(m.get("accessToken"));
+                    a.refreshToken = str(m.get("refreshToken"));
+                    Object exp = m.get("expiresAtMillis");
+                    a.expiresAtMillis = (exp instanceof Double) ? ((Double) exp).longValue() : 0;
+                    accounts.put(a.id, a);
+                }
+            } else if (root.get("refreshToken") instanceof String) {
+                // Legacy single-account file - migrate it into one entry.
+                Account a = new Account(randomUrlSafe(12));
+                a.email = str(root.get("email"));
+                a.name = str(root.get("name"));
+                a.picture = str(root.get("picture"));
+                a.accessToken = str(root.get("accessToken"));
+                a.refreshToken = str(root.get("refreshToken"));
+                Object exp = root.get("expiresAtMillis");
+                a.expiresAtMillis = (exp instanceof Double) ? ((Double) exp).longValue() : 0;
+                accounts.put(a.id, a);
+            }
         } catch (Exception e) {
             System.err.println("Warning: could not load Google Drive config: " + e.getMessage());
         }

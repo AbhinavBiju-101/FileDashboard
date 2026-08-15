@@ -24,13 +24,16 @@ public class GDriveSuggestHandler implements HttpHandler {
         String q = QueryUtil.getParam(query, "q");
         q = q == null ? "" : URLDecoder.decode(q, "UTF-8");
         String onlyFolders = QueryUtil.getParam(query, "foldersOnly");
+        String account = QueryUtil.getParam(query, "account");
+        account = account == null ? null : URLDecoder.decode(account, "UTF-8");
+        String accountId = GDriveAuth.resolveAccount(account);
 
         List<GDriveClient.DriveItem> items;
-        if (!GDriveAuth.isConnected() || q.trim().isEmpty()) {
+        if (accountId == null || q.trim().isEmpty()) {
             items = Collections.emptyList();
         } else {
             try {
-                items = GDriveClient.search(q);
+                items = GDriveClient.search(accountId, q);
             } catch (IOException e) {
                 items = Collections.emptyList();
             }

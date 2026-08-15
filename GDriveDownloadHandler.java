@@ -33,6 +33,10 @@ import java.nio.charset.StandardCharsets;
  * generated the link (see GDriveBrowseHandler.java) - the actual streamed
  * bytes and the real mime type used for the response come from a fresh
  * Drive metadata lookup done here, not trusted from the query string.
+ * "account" identifies which connected Google account to use (see
+ * GDriveAuth.java) - resolved defensively the same way every other Drive
+ * handler does, via GDriveAuth.resolveAccount(), rather than failing
+ * outright on an old link saved before this app supported more than one.
  */
 public class GDriveDownloadHandler implements HttpHandler {
 
@@ -48,10 +52,19 @@ public class GDriveDownloadHandler implements HttpHandler {
             respondError(exchange, 400, "Missing file id.");
             return;
         }
+        String account = QueryUtil.getParam(query, "account");
+        if (account != null) {
+            try { account = URLDecoder.decode(account, "UTF-8"); } catch (Exception ignored) {}
+        }
+        String accountId = GDriveAuth.resolveAccount(account);
+        if (accountId == null) {
+            respondError(exchange, 400, "No Google account is connected - connect one from Settings first.");
+            return;
+        }
 
         GDriveClient.DriveItem meta;
         try {
-            meta = GDriveClient.getMetadata(id);
+            meta = GDriveClient.getMetadata(accountId, id);
         } catch (IOException e) {
             respondError(exchange, 502, "Couldn't look up this file on Google Drive: " + e.getMessage());
             return;
@@ -78,7 +91,7 @@ public class GDriveDownloadHandler implements HttpHandler {
         // path would need chunked responses instead.
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         try {
-            GDriveClient.streamFile(id, buffer);
+            GDriveClient.streamFile(accountId, id, buffer);
         } catch (IOException e) {
             respondError(exchange, 502, "Couldn't download this file from Google Drive: " + e.getMessage());
             return;

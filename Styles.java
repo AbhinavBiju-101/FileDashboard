@@ -62,6 +62,10 @@ public class Styles {
         ".session-name-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}" +
         ".session-name{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;}" +
         ".session-meta{font-size:12px;color:#888;margin-top:3px;}" +
+        // "Signed in as ..." chip under a Drive session's name row (see
+        // SessionsHandler.java's renderSessions()).
+        ".session-account-chip{display:flex;align-items:center;gap:5px;font-size:12px;color:#555;margin-top:3px;}" +
+        ".session-account-avatar{width:14px;height:14px;border-radius:50%;}" +
         ".session-badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;white-space:nowrap;}" +
         ".session-badge-current{background:#e6f4ea;color:#1a7f37;}" +
         ".session-badge-active{background:#fff1e6;color:#b5590a;}" +
@@ -276,6 +280,27 @@ public class Styles {
         ".move-modal-actions button{padding:7px 14px;border:1px solid #c7cbd1;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;}" +
         ".move-modal-actions .move-confirm{background:#2563eb;color:#fff;border-color:#2563eb;}" +
         ".move-modal-actions .move-confirm:hover{background:#1d4ed8;}" +
+        // Google Drive account picker (see ShellScript.java's
+        // shellOpenDrivePicker() - built entirely with DOM calls at
+        // runtime rather than server-rendered markup, since it can be
+        // opened from any tab/frame at any time, but this CSS still lives
+        // centrally here like everything else).
+        ".gdrive-picker-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2500;display:flex;align-items:center;justify-content:center;}" +
+        ".gdrive-picker-box{background:#fff;border-radius:10px;width:340px;max-width:90vw;max-height:70vh;display:flex;flex-direction:column;overflow:hidden;}" +
+        ".gdrive-picker-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;font-size:14px;font-weight:600;border-bottom:1px solid #eee;}" +
+        ".gdrive-picker-close{background:none;border:none;font-size:20px;line-height:1;cursor:pointer;color:#888;padding:0;}" +
+        ".gdrive-picker-close:hover{color:#333;}" +
+        ".gdrive-picker-list{overflow-y:auto;flex:1;min-height:60px;max-height:280px;}" +
+        ".gdrive-picker-loading,.gdrive-picker-empty{padding:20px 16px;color:#888;font-size:13px;text-align:center;}" +
+        ".gdrive-picker-row{display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;}" +
+        ".gdrive-picker-row:hover{background:#f0f5ff;}" +
+        ".gdrive-picker-avatar{width:28px;height:28px;border-radius:50%;flex-shrink:0;}" +
+        ".gdrive-picker-avatar-fallback{background:#2563eb;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;}" +
+        ".gdrive-picker-row-text{min-width:0;}" +
+        ".gdrive-picker-row-name{font-size:13px;color:#222;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}" +
+        ".gdrive-picker-row-email{font-size:12px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}" +
+        ".gdrive-picker-add{border:none;border-top:1px solid #eee;background:#fafbfc;padding:12px 16px;font-size:13px;color:#2563eb;cursor:pointer;text-align:left;}" +
+        ".gdrive-picker-add:hover{background:#f0f5ff;}" +
         // Type-filter chips
         ".filter-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}" +
         ".chip{padding:5px 12px;border-radius:14px;background:#eef0f2;color:#555;font-size:12px;cursor:pointer;}" +

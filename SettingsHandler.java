@@ -72,7 +72,8 @@ public class SettingsHandler implements HttpHandler {
                 GDriveAuth.setClientCredentials(clientId, clientSecret);
             }
         } else if ("disconnect-gdrive".equals(action)) {
-            GDriveAuth.disconnect();
+            String accountId = formParam(body, "accountId");
+            if (accountId != null && !accountId.isEmpty()) GDriveAuth.disconnect(accountId);
         }
 
         String redirect = result == null
@@ -162,68 +163,82 @@ public class SettingsHandler implements HttpHandler {
         // merged back - it added a second consent screen and a pricier
         // OAuth client-type requirement without actually reducing the
         // Google Cloud Console setup work, which is the same either way).
+        //
+        // Any number of accounts can be connected side by side - each one
+        // shows up here as its own row with its own Disconnect button, and
+        // each can back any number of independent Google Drive sessions
+        // (see ShellScript.java's account picker, used when starting a new
+        // one from the Session Manager).
         sb.append("<div class='settings-section'>");
         sb.append("<h2>").append(DriveIcon.img(22)).append(" Google Drive</h2>");
-        sb.append("<p class='settings-desc'>Connect a Google account to browse its Drive files through the same card-grid UI as your local ")
-          .append("files, from its own pinned session in the <a href=\"/sessions\" onclick=\"if(parent&&parent.navigateCurrentTab){ parent.navigateCurrentTab('/sessions'); return false; }\">Session Manager</a>. ")
+        sb.append("<p class='settings-desc'>Connect one or more Google accounts to browse their Drive files through the same card-grid UI as your local ")
+          .append("files, from their own Drive sessions in the <a href=\"/sessions\" onclick=\"if(parent&&parent.navigateCurrentTab){ parent.navigateCurrentTab('/sessions'); return false; }\">Session Manager</a>. ")
           .append("Read-only for now - browsing and downloading, no uploads/renames/deletes yet.</p>");
 
-        if (GDriveAuth.isConnected()) {
-            String driveName = GDriveAuth.getName();
-            String driveEmail = GDriveAuth.getEmail();
-            String drivePicture = GDriveAuth.getPicture();
-            sb.append("<div class='gaccount-identity'>");
-            if (drivePicture != null) {
-                sb.append("<img class='gaccount-avatar' src='").append(PathUtil.htmlEscape(drivePicture)).append("' alt=''>");
+        java.util.List<GDriveAuth.AccountInfo> accounts = GDriveAuth.listAccounts();
+        if (!accounts.isEmpty()) {
+            sb.append("<div class='gaccount-list'>");
+            for (GDriveAuth.AccountInfo acct : accounts) {
+                sb.append("<div class='gaccount-identity'>");
+                if (acct.picture != null) {
+                    sb.append("<img class='gaccount-avatar' src='").append(PathUtil.htmlEscape(acct.picture)).append("' alt=''>");
+                }
+                sb.append("<div class='gaccount-identity-text'><strong>").append(PathUtil.htmlEscape(acct.displayName())).append("</strong>");
+                if (acct.name != null && acct.email != null) sb.append("<div class='gaccount-email'>").append(PathUtil.htmlEscape(acct.email)).append("</div>");
+                sb.append("</div>");
+                sb.append("<form method='POST' action='/settings' class='settings-form gaccount-disconnect-form'>");
+                sb.append("<input type='hidden' name='action' value='disconnect-gdrive'>");
+                sb.append("<input type='hidden' name='accountId' value='").append(PathUtil.htmlEscape(acct.id)).append("'>");
+                sb.append("<button type='submit' class='settings-btn-subtle'>Disconnect</button>");
+                sb.append("</form>");
+                sb.append("</div>");
             }
-            sb.append("<div>Connected as <strong>").append(driveName != null ? PathUtil.htmlEscape(driveName) : (driveEmail != null ? PathUtil.htmlEscape(driveEmail) : "(unknown account)")).append("</strong>");
-            if (driveName != null && driveEmail != null) sb.append("<div class='gaccount-email'>").append(PathUtil.htmlEscape(driveEmail)).append("</div>");
-            sb.append("</div></div>");
-            sb.append("<form method='POST' action='/settings' class='settings-form'>");
-            sb.append("<input type='hidden' name='action' value='disconnect-gdrive'>");
-            sb.append("<button type='submit'>Disconnect</button>");
-            sb.append("</form>");
+            sb.append("</div>");
+        }
+
+        if (!GDriveAuth.isConfigured()) {
+            sb.append("<p class='settings-hint'>This app has no Google credentials of its own - connecting means creating your own free ")
+              .append("Google Cloud OAuth client and pointing it here:</p>");
+            sb.append("<ol class='settings-steps'>");
+            sb.append("<li>In <a href=\"https://console.cloud.google.com/apis/credentials\" target=\"_blank\" rel=\"noopener\">Google Cloud Console \u2192 Credentials</a>, create an OAuth client of type <strong>Desktop app</strong>.</li>");
+            sb.append("<li>Enable the <strong>Google Drive API</strong> for that project.</li>");
+            sb.append("<li>Add this under <strong>Authorized redirect URIs</strong>: <code>")
+              .append(PathUtil.htmlEscape(GDriveAuth.redirectUri())).append("</code></li>");
+            sb.append("<li>Paste the resulting Client ID <strong>and</strong> Client Secret below. Per Google's docs, PKCE should let a Desktop app client skip the secret entirely - in practice Google's token endpoint rejects the exchange without one anyway, so enter both.</li>");
+            sb.append("</ol>");
         } else {
-            if (!GDriveAuth.isConfigured()) {
-                sb.append("<p class='settings-hint'>This app has no Google credentials of its own - connecting means creating your own free ")
-                  .append("Google Cloud OAuth client and pointing it here:</p>");
-                sb.append("<ol class='settings-steps'>");
-                sb.append("<li>In <a href=\"https://console.cloud.google.com/apis/credentials\" target=\"_blank\" rel=\"noopener\">Google Cloud Console \u2192 Credentials</a>, create an OAuth client of type <strong>Desktop app</strong>.</li>");
-                sb.append("<li>Enable the <strong>Google Drive API</strong> for that project.</li>");
-                sb.append("<li>Add this under <strong>Authorized redirect URIs</strong>: <code>")
-                  .append(PathUtil.htmlEscape(GDriveAuth.redirectUri())).append("</code></li>");
-                sb.append("<li>Paste the resulting Client ID <strong>and</strong> Client Secret below. Per Google's docs, PKCE should let a Desktop app client skip the secret entirely - in practice Google's token endpoint rejects the exchange without one anyway, so enter both.</li>");
-                sb.append("</ol>");
-            } else {
-                sb.append("<p class='settings-current'>OAuth client configured. <a href='#' onclick=\"document.getElementById('gClientForm').classList.toggle('settings-hidden'); return false;\">Edit</a></p>");
-            }
-            sb.append("<form method='POST' action='/settings' class='settings-form settings-form-stacked")
-              .append(GDriveAuth.isConfigured() ? " settings-hidden" : "").append("' id='gClientForm'>");
-            sb.append("<input type='hidden' name='action' value='save-gdrive-credentials'>");
-            sb.append("<input type='text' name='gdriveClientId' placeholder='Client ID' value='")
-              .append(GDriveAuth.getClientId() != null ? PathUtil.htmlEscape(GDriveAuth.getClientId()) : "").append("'>");
-            sb.append("<input type='text' name='gdriveClientSecret' placeholder='Client Secret' value='")
-              .append(GDriveAuth.getClientSecret() != null ? PathUtil.htmlEscape(GDriveAuth.getClientSecret()) : "").append("'>");
-            sb.append("<button type='submit'>Save</button>");
-            sb.append("</form>");
-            if (GDriveAuth.isConfigured()) {
-                // A real popup window (window.open), not target="_blank"/a plain link:
-                // this Settings page is itself rendered inside one of the app shell's
-                // iframes (see ShellScript.java), and Google's sign-in refuses to render
-                // inside any iframe at all (anti-clickjacking) - a bare <a target> click
-                // would still work since it forces a top-level navigation, but a popup
-                // is nicer here since it doesn't navigate this tab away at all. The
-                // popup keeps its own address bar (location=yes) since Google also
-                // rejects chrome-less/embedded-looking windows. handleCallback() tags
-                // its redirect back to /settings with &gauth=1, which the script below
-                // uses to know "this /settings load is a popup reporting its result" -
-                // it reloads the opener (this page) so it picks up the new Connected
-                // state, then closes itself after a moment so the person doesn't have
-                // to close the popup by hand.
-                sb.append("<p class='settings-hint'><a class='settings-connect-link' href='/gauth/start' onclick=\"")
-                  .append("window.open('/gauth/start','gdriveConnect','width=520,height=680,menubar=no,toolbar=no,location=yes,status=no,resizable=yes,scrollbars=yes');")
-                  .append("return false;\">").append(DriveIcon.img(16)).append(" Connect Google Drive \u2192</a></p>");
-            }
+            sb.append("<p class='settings-current'>OAuth client configured. <a href='#' onclick=\"document.getElementById('gClientForm').classList.toggle('settings-hidden'); return false;\">Edit</a></p>");
+        }
+        sb.append("<form method='POST' action='/settings' class='settings-form settings-form-stacked")
+          .append(GDriveAuth.isConfigured() ? " settings-hidden" : "").append("' id='gClientForm'>");
+        sb.append("<input type='hidden' name='action' value='save-gdrive-credentials'>");
+        sb.append("<input type='text' name='gdriveClientId' placeholder='Client ID' value='")
+          .append(GDriveAuth.getClientId() != null ? PathUtil.htmlEscape(GDriveAuth.getClientId()) : "").append("'>");
+        sb.append("<input type='text' name='gdriveClientSecret' placeholder='Client Secret' value='")
+          .append(GDriveAuth.getClientSecret() != null ? PathUtil.htmlEscape(GDriveAuth.getClientSecret()) : "").append("'>");
+        sb.append("<button type='submit'>Save</button>");
+        sb.append("</form>");
+        if (GDriveAuth.isConfigured()) {
+            // A real popup window (window.open), not target="_blank"/a plain link:
+            // this Settings page is itself rendered inside one of the app shell's
+            // iframes (see ShellScript.java), and Google's sign-in refuses to render
+            // inside any iframe at all (anti-clickjacking) - a bare <a target> click
+            // would still work since it forces a top-level navigation, but a popup
+            // is nicer here since it doesn't navigate this tab away at all. The
+            // popup keeps its own address bar (location=yes) since Google also
+            // rejects chrome-less/embedded-looking windows. handleCallback() tags
+            // its redirect back to /settings with &gauth=1, which the script below
+            // uses to know "this /settings load is a popup reporting its result" -
+            // it reloads the opener (this page) so it picks up the new Connected
+            // state, then closes itself after a moment so the person doesn't have
+            // to close the popup by hand. (No ?context= here - defaults to
+            // "settings" in GDriveAuth.beginAuth(), which is exactly this
+            // reload-the-opener behavior; ShellScript.java's own account picker
+            // passes ?context=picker instead precisely to avoid it - see
+            // GoogleAuthHandler.java's class comment.)
+            sb.append("<p class='settings-hint'><a class='settings-connect-link' href='/gauth/start' onclick=\"")
+              .append("window.open('/gauth/start','gdriveConnect','width=520,height=680,menubar=no,toolbar=no,location=yes,status=no,resizable=yes,scrollbars=yes');")
+              .append("return false;\">").append(DriveIcon.img(16)).append(accounts.isEmpty() ? " Connect Google Drive \u2192" : " Add another Google account \u2192").append("</a></p>");
         }
         sb.append("</div>");
 
@@ -290,9 +305,14 @@ public class SettingsHandler implements HttpHandler {
               "text-decoration:none;font-size:13px;margin-top:4px;}" +
             ".settings-connect-link:hover{background:#1d4ed8;}" +
             ".settings-hidden{display:none;}" +
+            ".gaccount-list{display:flex;flex-direction:column;gap:2px;margin-bottom:14px;}" +
             ".gaccount-identity{display:flex;align-items:center;gap:10px;margin-bottom:10px;}" +
-            ".gaccount-avatar{width:36px;height:36px;border-radius:50%;}" +
+            ".gaccount-identity-text{flex:1;}" +
+            ".gaccount-avatar{width:36px;height:36px;border-radius:50%;flex-shrink:0;}" +
             ".gaccount-email{font-size:12px;color:#888;margin-top:1px;}" +
+            ".gaccount-disconnect-form{margin:0;}" +
+            ".settings-btn-subtle{background:none;border:1px solid #ddd;color:#666;border-radius:6px;padding:6px 12px;font-size:13px;cursor:pointer;}" +
+            ".settings-btn-subtle:hover{background:#fdeaea;color:#9c1f1f;border-color:#f0b8b8;}" +
             ".settings-ideas ul{margin:0;padding-left:20px;color:#555;font-size:13px;line-height:1.9;}" +
             "</style>";
     }

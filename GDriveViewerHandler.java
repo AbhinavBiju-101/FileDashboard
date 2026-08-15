@@ -45,13 +45,20 @@ public class GDriveViewerHandler implements HttpHandler {
         String id = QueryUtil.getParam(query, "id");
         String name = QueryUtil.getParam(query, "name");
         String mime = QueryUtil.getParam(query, "mime");
+        String account = QueryUtil.getParam(query, "account");
         id = id == null ? "" : URLDecoder.decode(id, "UTF-8");
         name = name == null ? "(untitled)" : URLDecoder.decode(name, "UTF-8");
         mime = mime == null ? "" : URLDecoder.decode(mime, "UTF-8");
+        account = account == null ? null : URLDecoder.decode(account, "UTF-8");
+        String accountId = GDriveAuth.resolveAccount(account);
 
         String html;
         try {
-            html = buildPage(id, name, mime);
+            if (accountId == null) {
+                html = errorPage("No Google account is connected - connect one from Settings first.");
+            } else {
+                html = buildPage(accountId, id, name, mime);
+            }
         } catch (Exception e) {
             html = errorPage("Couldn't open this file: " + e.getMessage());
         }
@@ -64,7 +71,7 @@ public class GDriveViewerHandler implements HttpHandler {
         }
     }
 
-    private String buildPage(String id, String name, String mime) {
+    private String buildPage(String accountId, String id, String name, String mime) {
         boolean isNative = GDriveClient.isNativeGoogleDoc(mime);
         String ext = GridRenderer.getExtension(name).toLowerCase();
         boolean textlike = GDriveBrowseHandler.isTextLike(mime, name);
@@ -72,17 +79,18 @@ public class GDriveViewerHandler implements HttpHandler {
         boolean isPdf = ext.equals("pdf");
         boolean isMarkdown = textlike && ext.equals("md");
         boolean isCode = textlike && !isMarkdown && CodeLanguageUtil.shouldHighlight(ext);
+        String acctQS = "&account=" + PathUtil.urlEncode(accountId);
 
         String webViewLink = null;
         if (isNative) {
             try {
-                GDriveClient.DriveItem meta = GDriveClient.getMetadata(id);
+                GDriveClient.DriveItem meta = GDriveClient.getMetadata(accountId, id);
                 if (meta != null) webViewLink = meta.webViewLink;
             } catch (IOException ignored) {}
         }
 
         String downloadUrl = isNative ? null : "/gdrive-file?id=" + PathUtil.urlEncode(id)
-              + "&name=" + PathUtil.urlEncode(name) + "&mime=" + PathUtil.urlEncode(mime);
+              + "&name=" + PathUtil.urlEncode(name) + "&mime=" + PathUtil.urlEncode(mime) + acctQS;
         String viewUrl = isNative ? GDriveBrowseHandler.embeddablePreviewUrl(webViewLink)
               : (downloadUrl + "&mode=view");
 
@@ -98,7 +106,7 @@ public class GDriveViewerHandler implements HttpHandler {
         if (textlike) {
             try {
                 ByteArrayOutputStream buf = new ByteArrayOutputStream();
-                GDriveClient.streamFile(id, buf);
+                GDriveClient.streamFile(accountId, id, buf);
                 textContent = new String(buf.toByteArray(), StandardCharsets.UTF_8);
             } catch (IOException e) {
                 textLoadFailed = true;

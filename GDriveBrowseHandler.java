@@ -61,10 +61,13 @@ public class GDriveBrowseHandler implements HttpHandler {
         String query = exchange.getRequestURI().getRawQuery();
         String rawPath = QueryUtil.getParam(query, "path");
         String only = QueryUtil.getParam(query, "only"); // "folders" | "files" | null - see SidebarRenderer.java's "Home folders"/"Home files" shortcuts
+        String account = QueryUtil.getParam(query, "account");
+        account = account == null ? null : URLDecoder.decode(account, "UTF-8");
+        String accountId = GDriveAuth.resolveAccount(account);
         List<Crumb> crumbs = parsePath(rawPath);
         String currentFolderId = crumbs.isEmpty() ? "root" : crumbs.get(crumbs.size() - 1).id;
 
-        String html = buildPage(crumbs, currentFolderId, only);
+        String html = buildPage(crumbs, currentFolderId, only, accountId);
         byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
         exchange.sendResponseHeaders(200, bytes.length);
@@ -98,7 +101,10 @@ public class GDriveBrowseHandler implements HttpHandler {
         return sb.toString();
     }
 
-    private String buildPage(List<Crumb> crumbs, String currentFolderId, String only) {
+    private String buildPage(List<Crumb> crumbs, String currentFolderId, String only, String accountId) {
+        String acctQS = accountId == null ? "" : "&account=" + PathUtil.urlEncode(accountId);
+        GDriveAuth.AccountInfo account = accountId == null ? null : GDriveAuth.getAccountInfo(accountId);
+
         StringBuilder sb = new StringBuilder();
         sb.append("<!DOCTYPE html><html><head><meta charset='UTF-8'>");
         sb.append("<meta name='viewport' content='width=device-width, initial-scale=1'>");
@@ -112,18 +118,20 @@ public class GDriveBrowseHandler implements HttpHandler {
         // these two constants directly is safe.
         sb.append(PageScripts.CODE_HIGHLIGHT_RESOURCES);
         sb.append(PageScripts.DOCX_RESOURCES);
+        sb.append("<script>var GDRIVE_ACCOUNT=").append(jsStringLiteral(accountId)).append(";")
+          .append("function gdriveAcctQS(){ return GDRIVE_ACCOUNT?('&account='+encodeURIComponent(GDRIVE_ACCOUNT)):''; }</script>");
         sb.append("</head><body><div class='page-content'>");
 
         sb.append("<div class='topbar'>");
         sb.append("<a class='brand-link' href='/dashboard' onclick=\"if(parent&&parent.navigateCurrentTab){ parent.navigateCurrentTab('/dashboard'); return false; }\"><h1>File Dashboard</h1></a>");
         sb.append("<div class='breadcrumb'>");
-        sb.append("<a href='/gdrive?path='>").append(DriveIcon.img(14)).append(" My Drive</a>");
+        sb.append("<a href='/gdrive?path=").append(acctQS).append("'>").append(DriveIcon.img(14)).append(" My Drive</a>");
         for (int i = 0; i < crumbs.size(); i++) {
             sb.append(" / ");
             if (i == crumbs.size() - 1) {
                 sb.append(PathUtil.htmlEscape(crumbs.get(i).name));
             } else {
-                sb.append("<a href='/gdrive?path=").append(pathFor(crumbs, i)).append("'>")
+                sb.append("<a href='/gdrive?path=").append(pathFor(crumbs, i)).append(acctQS).append("'>")
                   .append(PathUtil.htmlEscape(crumbs.get(i).name)).append("</a>");
             }
         }
@@ -131,6 +139,24 @@ public class GDriveBrowseHandler implements HttpHandler {
             sb.append(" <span class='gdrive-only-badge'>").append("folders".equals(only) ? "Folders only" : "Files only").append("</span>");
         }
         sb.append("</div>");
+
+        // "Signed in as" strip right above the search/filter row - who this
+        // whole page's contents belong to, at a glance, so browsing one of
+        // several connected accounts' Drives never leaves any doubt about
+        // which one is on screen (see ShellScript.java's account picker,
+        // which is what let more than one become possible to have open at
+        // once in the first place).
+        if (account != null) {
+            sb.append("<div class='gdrive-account-strip'>");
+            if (account.picture != null) {
+                sb.append("<img class='gdrive-account-avatar' src='").append(PathUtil.htmlEscape(account.picture)).append("' alt=''>");
+            }
+            sb.append("<span class='gdrive-account-name'>").append(PathUtil.htmlEscape(account.displayName())).append("</span>");
+            if (account.email != null && account.name != null) {
+                sb.append("<span class='gdrive-account-email'>").append(PathUtil.htmlEscape(account.email)).append("</span>");
+            }
+            sb.append("</div>");
+        }
 
         // Same visual slot/markup as local Browse's toolbar (see
         // BrowseHandler.buildToolbar()): a .toolbar row (just the search
@@ -144,6 +170,7 @@ public class GDriveBrowseHandler implements HttpHandler {
         sb.append("<div class='toolbar'>");
         sb.append("<div class='search-suggest-wrap'>");
         sb.append("<form class='search-inline' method='GET' action='/gdrive-search'>")
+          .append("<input type='hidden' name='account' value='").append(accountId == null ? "" : PathUtil.htmlEscape(accountId)).append("'>")
           .append("<input type='text' name='q' class='js-gdrive-search-input' placeholder='Search Google Drive...' autocomplete='off'>")
           .append("<button type='submit'>Search</button></form>");
         sb.append("<div class='search-suggestions' id='gdriveSearchSuggestions'></div>");
@@ -152,14 +179,14 @@ public class GDriveBrowseHandler implements HttpHandler {
         sb.append(buildFilterChips());
         sb.append("</div>");
 
-        if (!GDriveAuth.isConnected()) {
+        if (accountId == null) {
             sb.append("<div class='gdrive-empty-state'>");
             sb.append("<p>Google Drive isn't connected yet.</p>");
-            sb.append("<p><a href='/settings' onclick=\"if(parent&&parent.navigateCurrentTab){ parent.navigateCurrentTab('/settings'); return false; }\">Connect it in Settings</a> to browse your Drive files here.</p>");
+            sb.append("<p><a href='/settings' onclick=\"if(parent&&parent.navigateCurrentTab){ parent.navigateCurrentTab('/settings'); return false; }\">Connect an account in Settings</a> to browse its Drive files here.</p>");
             sb.append("</div>");
         } else {
             try {
-                List<GDriveClient.DriveItem> items = GDriveClient.listChildren(currentFolderId);
+                List<GDriveClient.DriveItem> items = GDriveClient.listChildren(accountId, currentFolderId);
                 if ("folders".equals(only)) {
                     items = filterItems(items, true);
                 } else if ("files".equals(only)) {
@@ -168,9 +195,9 @@ public class GDriveBrowseHandler implements HttpHandler {
                 sb.append("<div class='grid'>");
                 for (GDriveClient.DriveItem item : items) {
                     if (GDriveClient.isFolder(item.mimeType)) {
-                        sb.append(folderCard(crumbs, item));
+                        sb.append(folderCard(crumbs, item, acctQS));
                     } else {
-                        sb.append(fileCard(item));
+                        sb.append(fileCard(item, acctQS));
                     }
                 }
                 if (items.isEmpty()) {
@@ -199,6 +226,14 @@ public class GDriveBrowseHandler implements HttpHandler {
         sb.append(CHIP_FILTER_SCRIPT);
         sb.append("</div></body></html>");
         return sb.toString();
+    }
+
+    // A JS string literal (single-quoted, escaped) for embedding accountId
+    // (or 'null' when there isn't one) into the inline <script> above -
+    // shared spelling with jsString() in GDriveViewerHandler.java, kept as
+    // its own tiny copy here rather than a shared util for one line.
+    private static String jsStringLiteral(String s) {
+        return s == null ? "null" : "'" + s.replace("\\", "\\\\").replace("'", "\\'") + "'";
     }
 
     private List<GDriveClient.DriveItem> filterItems(List<GDriveClient.DriveItem> items, boolean foldersOnly) {
@@ -284,10 +319,10 @@ public class GDriveBrowseHandler implements HttpHandler {
         return webViewLink;
     }
 
-    private String folderCard(List<Crumb> crumbs, GDriveClient.DriveItem item) {
+    private String folderCard(List<Crumb> crumbs, GDriveClient.DriveItem item, String acctQS) {
         List<Crumb> withThis = new ArrayList<>(crumbs);
         withThis.add(new Crumb(item.id, item.name));
-        return folderCardForPath(pathFor(withThis, withThis.size() - 1), item.name, item.id, item.webViewLink);
+        return folderCardForPath(pathFor(withThis, withThis.size() - 1), item.name, item.id, item.webViewLink, acctQS);
     }
 
     // Shared by folderCard() above (navigating deeper from a known
@@ -301,18 +336,18 @@ public class GDriveBrowseHandler implements HttpHandler {
     // SELECTION_SCRIPT), double-click is what actually navigates (see
     // data-gdrive-navurl, read by CONTEXT_MENU_SCRIPT's shared "open-here"
     // logic).
-    static String folderCardForPath(String path, String rawName, String id, String webViewLink) {
+    static String folderCardForPath(String path, String rawName, String id, String webViewLink, String acctQS) {
         String name = PathUtil.htmlEscape(rawName);
         return "<div class=\"card folder\" " +
                "data-gdrive-id=\"" + PathUtil.htmlEscape(id) + "\" data-gdrive-name=\"" + name + "\" " +
                "data-gdrive-kind=\"folder\" data-gdrive-webviewlink=\"" + (webViewLink == null ? "" : PathUtil.htmlEscape(webViewLink)) + "\" " +
-               "data-gdrive-navurl=\"/gdrive?path=" + path + "\">" +
+               "data-gdrive-navurl=\"/gdrive?path=" + path + acctQS + "\">" +
                "<div class=\"icon\">&#128193;</div>" +
                "<div class=\"name\" title=\"" + name + "\">" + name + "</div>" +
                "</div>";
     }
 
-    static String fileCard(GDriveClient.DriveItem item) {
+    static String fileCard(GDriveClient.DriveItem item, String acctQS) {
         String name = PathUtil.htmlEscape(item.name);
         boolean nativeDoc = GDriveClient.isNativeGoogleDoc(item.mimeType);
         String category = categoryFor(item.mimeType, item.name);
@@ -323,7 +358,7 @@ public class GDriveBrowseHandler implements HttpHandler {
         String mime = item.mimeType == null ? "" : item.mimeType;
 
         String downloadUrl = nativeDoc ? "" : "/gdrive-file?id=" + PathUtil.urlEncode(item.id)
-              + "&name=" + PathUtil.urlEncode(item.name) + "&mime=" + PathUtil.urlEncode(mime);
+              + "&name=" + PathUtil.urlEncode(item.name) + "&mime=" + PathUtil.urlEncode(mime) + acctQS;
         String viewUrl = nativeDoc ? embeddablePreviewUrl(item.webViewLink)
               : (downloadUrl.isEmpty() ? "" : downloadUrl + "&mode=view");
 
@@ -404,7 +439,7 @@ public class GDriveBrowseHandler implements HttpHandler {
           "var q=input.value.trim();" +
           "if(!q){ box.innerHTML=''; box.classList.remove('open'); return; }" +
           "debounce=setTimeout(function(){" +
-            "fetch('/gdrive-suggest?q='+encodeURIComponent(q)).then(function(r){return r.json();}).then(function(items){" +
+            "fetch('/gdrive-suggest?q='+encodeURIComponent(q)+gdriveAcctQS()).then(function(r){return r.json();}).then(function(items){" +
               "if(!items.length){ box.innerHTML=''; box.classList.remove('open'); return; }" +
               "box.innerHTML=items.map(function(it){" +
                 "var idAttr=String(it.id).replace(/\"/g,'&quot;');" +
@@ -422,9 +457,9 @@ public class GDriveBrowseHandler implements HttpHandler {
           "if(!item) return;" +
           "var nav=parent&&parent.navigateCurrentTab?parent.navigateCurrentTab:function(u){location.href=u;};" +
           "if(item.dataset.type==='folder'){" +
-            "nav('/gdrive?path='+encodeURIComponent(item.dataset.id)+'%7C'+encodeURIComponent(item.dataset.name));" +
+            "nav('/gdrive?path='+encodeURIComponent(item.dataset.id)+'%7C'+encodeURIComponent(item.dataset.name)+gdriveAcctQS());" +
           "}else{" +
-            "nav('/gdrive-search?q='+encodeURIComponent(item.dataset.name));" +
+            "nav('/gdrive-search?q='+encodeURIComponent(item.dataset.name)+gdriveAcctQS());" +
           "}" +
         "});" +
         "document.addEventListener('click', function(e){" +
@@ -539,7 +574,7 @@ public class GDriveBrowseHandler implements HttpHandler {
           "if(ext==='pdf'||textlike||isNative){" +
             "viewerAction.innerHTML='<a href=\"#\" onclick=\"openGDrivePreviewInViewer(); return false;\" class=\"preview-download\">Open in Viewer</a>';" +
           "}else{ viewerAction.innerHTML=''; }" +
-          "gdrivePreviewViewerHref='/gdrive-viewer?id='+encodeURIComponent(card.dataset.gdriveId)+'&name='+encodeURIComponent(name)+'&mime='+encodeURIComponent(mime||'');" +
+          "gdrivePreviewViewerHref='/gdrive-viewer?id='+encodeURIComponent(card.dataset.gdriveId)+'&name='+encodeURIComponent(name)+'&mime='+encodeURIComponent(mime||'')+gdriveAcctQS();" +
           "body.innerHTML='';" +
           "if(isNative){" +
             "body.innerHTML='<iframe src=\"'+viewUrl+'\"></iframe>';" +
@@ -697,7 +732,7 @@ public class GDriveBrowseHandler implements HttpHandler {
           "if(action==='open-here' && card){ nav(card.dataset.gdriveNavurl); }" +
           "else if(action==='preview' && card){ openGDrivePreview(card); }" +
           "else if(action==='open-viewer' && card){" +
-            "var href='/gdrive-viewer?id='+encodeURIComponent(card.dataset.gdriveId)+'&name='+encodeURIComponent(card.dataset.gdriveName)+'&mime='+encodeURIComponent(card.dataset.gdriveMime||'');" +
+            "var href='/gdrive-viewer?id='+encodeURIComponent(card.dataset.gdriveId)+'&name='+encodeURIComponent(card.dataset.gdriveName)+'&mime='+encodeURIComponent(card.dataset.gdriveMime||'')+gdriveAcctQS();" +
             "if(parent&&parent.openTab){ parent.openTab(href,'Loading...',true); } else { nav(href); }" +
           "}" +
           "else if(action==='open-external' && card){ window.open(card.dataset.gdriveWebviewlink,'_blank','noopener'); }" +
@@ -745,6 +780,15 @@ public class GDriveBrowseHandler implements HttpHandler {
             ".gdrive-error-detail{font-size:12px;color:#888;}" +
             ".gdrive-more-note{padding:0 24px 24px;}" +
             ".gdrive-only-badge{font-size:12px;color:#666;background:#eef0f2;padding:3px 9px;border-radius:10px;}" +
+            // "Signed in as" strip above the search/filter row (see
+            // buildPage()) - small enough not to compete with the toolbar,
+            // but present on every Drive page so which account's files are
+            // on screen is never ambiguous, especially once more than one
+            // is connected.
+            ".gdrive-account-strip{display:flex;align-items:center;gap:8px;padding:8px 24px;color:#555;font-size:12px;}" +
+            ".gdrive-account-avatar{width:20px;height:20px;border-radius:50%;flex-shrink:0;}" +
+            ".gdrive-account-name{font-weight:600;color:#333;}" +
+            ".gdrive-account-email{color:#888;}" +
             "</style>";
     }
 }

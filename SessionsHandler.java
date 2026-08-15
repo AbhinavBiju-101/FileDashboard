@@ -86,6 +86,22 @@ public class SessionsHandler implements HttpHandler {
         // are told apart purely by their own drive:true flag instead.
         "var GDRIVE_SESSION_ID='session-gdrive';" +
         "function isDriveSession(s){ return !!(s && (s.drive || s.id===GDRIVE_SESSION_ID)); }" +
+        // Fetched once at page load, keyed by account id, so each Drive
+        // session row can show "Signed in as <avatar> name/email" (see
+        // renderSessions() below) without a round trip per row. Re-fetched
+        // whenever the accounts list might have changed - after using the
+        // account picker (createDriveSession() -> shellOpenDrivePicker() in
+        // ShellScript.java) - by re-rendering on window focus, since this
+        // page can't otherwise know when that popup-based flow finishes.
+        "var gdriveAccountsById={};" +
+        "function refreshGdriveAccounts(){" +
+          "return fetch('/gdrive-accounts').then(function(r){return r.json();}).then(function(accounts){" +
+            "gdriveAccountsById={};" +
+            "accounts.forEach(function(a){ gdriveAccountsById[a.id]=a; });" +
+            "renderSessions();" +
+          "}).catch(function(){});" +
+        "}" +
+        "window.addEventListener('focus', refreshGdriveAccounts);" +
 
         "function fdFormatDate(ts){" +
           "var d=new Date(ts);" +
@@ -141,15 +157,29 @@ public class SessionsHandler implements HttpHandler {
             "var isMine=(id===mine);" +
             "var badge=isMine?\"<span class='session-badge session-badge-current'>This tab</span>\":" +
               "(active?\"<span class='session-badge session-badge-active'>Open in another tab</span>\":'');" +
-            "var unsavedBadge=(!isDrive && !s.named)?\"<span class='session-badge session-badge-unsaved' title='Not named - it may get cleaned up automatically, and you will not be warned before losing it'>Unsaved</span>\":'';" +
+            "var unsavedBadge=(!s.named)?\"<span class='session-badge session-badge-unsaved' title='Not named - it may get cleaned up automatically, and you will not be warned before losing it'>Unsaved</span>\":'';" +
             "var icon=isDrive?\"<img class='session-icon' src='\"+DRIVE_ICON_SRC+\"' width='16' height='16' alt='Google Drive' title='Google Drive'>\":'';" +
             "var tabCount=(s.tabs||[]).length;" +
             "var name=escapeHtml(s.name||(isDrive?'Google Drive':'Unnamed session'));" +
             "var locked=(isMine||active);" +
+            // "Signed in as ..." chip - see gdriveAccountsById above. Shown
+            // whenever the session remembers an accountId that's still
+            // connected (a session created before this app supported
+            // multiple accounts, or one whose account got disconnected
+            // since, simply won't have a match here and the chip is
+            // skipped - no dangling/broken account reference shown).
+            "var acct=isDrive?gdriveAccountsById[s.accountId]:null;" +
+            "var acctChip='';" +
+            "if(acct){" +
+              "var acctLabel=acct.name||acct.email||'';" +
+              "var acctAvatar=acct.picture?\"<img class='session-account-avatar' src='\"+acct.picture+\"' alt=''>\":'';" +
+              "acctChip=\"<div class='session-account-chip'>\"+acctAvatar+\"<span>Signed in as \"+escapeHtml(acctLabel)+\"</span></div>\";" +
+            "}" +
             "var metaLine=tabCount+' tab'+(tabCount===1?'':'s')+' &middot; '+(s.updatedAt?('updated '+fdFormatDate(s.updatedAt)):'not saved yet');" +
             "return \"<div class='session-row' data-session-id=\\\"\"+id+\"\\\">\" +" +
               "\"<div class='session-info'>\" +" +
                 "\"<div class='session-name-row'>\"+icon+\"<span class='session-name'>\"+name+\"</span>\"+badge+unsavedBadge+\"</div>\" +" +
+                "acctChip +" +
                 "\"<div class='session-meta'>\"+metaLine+\"</div>\" +" +
               "\"</div>\" +" +
               "\"<div class='session-actions'>\" +" +
@@ -163,7 +193,7 @@ public class SessionsHandler implements HttpHandler {
         "}" +
 
         "function createDriveSession(){" +
-          "if(window.parent && window.parent.shellCreateDriveSession){ window.parent.shellCreateDriveSession(); }" +
+          "if(window.parent && window.parent.shellOpenDrivePicker){ window.parent.shellOpenDrivePicker(); }" +
         "}" +
 
         "document.addEventListener('click', function(e){" +
@@ -215,6 +245,7 @@ public class SessionsHandler implements HttpHandler {
         "});" +
 
         "renderSessions();" +
+        "refreshGdriveAccounts();" +
         "setInterval(renderSessions, 3000);" +
         "</script>";
 }

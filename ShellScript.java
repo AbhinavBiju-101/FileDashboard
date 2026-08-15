@@ -183,7 +183,14 @@ public class ShellScript {
           "try{" +
             "var sessions=shellLoadSessionsMap();" +
             "var existing=sessions[shellSessionId];" +
-            "var isNamed=shellSessionIsDrive||!!(existing&&existing.named);" +
+            // Drive sessions no longer get a free pass here - only the old
+            // singleton ever did (see shellSessionEntryIsDrive()'s comment).
+            // Now that any number of Drive sessions can exist, one sitting
+            // untouched at its default "My Drive" root with no real
+            // navigation and never renamed is exactly as disposable as an
+            // empty local session, so it's judged by the same isNamed +
+            // shellSessionHasOnlyUselessTabs() rule.
+            "var isNamed=!!(existing&&existing.named);" +
             "if(!isNamed && shellSessionHasOnlyUselessTabs()){" +
               // Nothing worth keeping (yet) - if an earlier, since-emptied
               // version of this session had been persisted, drop it too,
@@ -218,7 +225,6 @@ public class ShellScript {
         "function shellUpdateUnsavedBadge(){" +
           "var badge=document.getElementById('shellUnsavedBadge');" +
           "if(!badge) return;" +
-          "if(shellSessionIsDrive){ badge.style.display='none'; return; }" +
           "var sessions=shellLoadSessionsMap();" +
           "var existing=sessions[shellSessionId];" +
           "var isNamed=!!(existing&&existing.named);" +
@@ -294,7 +300,7 @@ public class ShellScript {
             "var name=shellEscapeHtml(s.name||(isDriveEntry?'Google Drive':'Unnamed session'));" +
             "var badges='';" +
             "if(activeElsewhere){ badges+=\"<span class='sidebar-session-menu-badge elsewhere'>Open elsewhere</span>\"; }" +
-            "if(!isDriveEntry && !s.named){ badges+=\"<span class='sidebar-session-menu-badge unsaved'>Unsaved</span>\"; }" +
+            "if(!s.named){ badges+=\"<span class='sidebar-session-menu-badge unsaved'>Unsaved</span>\"; }" +
             "var tabCount=(s.tabs||[]).length;" +
             "var icon=isDriveEntry?\"<img class='sidebar-session-menu-icon' src='\"+DRIVE_ICON_SRC+\"' width='14' height='14' alt=''>\":'';" +
             "return \"<div class='sidebar-session-menu-item\"+(isMine?' current':'')+\"' data-session-id='\"+id+\"' title='\"+tabCount+\" tab\"+(tabCount===1?'':'s')+(isMine?' - this tab':'')+\"'>\" +" +
@@ -312,7 +318,7 @@ public class ShellScript {
           "if(actionItem){" +
             "shellCloseSessionMenu();" +
             "if(actionItem.dataset.sessionAction==='new'){ shellHandleForcedClose(); }" +
-            "else if(actionItem.dataset.sessionAction==='new-drive'){ shellCreateDriveSession(); }" +
+            "else if(actionItem.dataset.sessionAction==='new-drive'){ shellOpenDrivePicker(); }" +
             "else if(actionItem.dataset.sessionAction==='manage'){ navigateCurrentTab('/sessions'); }" +
             "return;" +
           "}" +
@@ -357,7 +363,6 @@ public class ShellScript {
         // last line of defense, since the badge only helps if it's been
         // noticed before the tab gets closed.
         "window.addEventListener('beforeunload', function(e){" +
-          "if(shellSessionIsDrive) return;" +
           "var sessions=shellLoadSessionsMap();" +
           "var existing=sessions[shellSessionId];" +
           "if(existing && existing.named) return;" +
@@ -509,29 +514,109 @@ public class ShellScript {
         "}" +
         "window.addEventListener('pagehide', shellReleaseHeartbeat);" +
 
-        // Mints a brand-new, independent Google Drive session - unlike the
-        // old singleton (fixed GDRIVE_SESSION_ID, exactly one could ever
-        // exist), this generates a normal session id the same way any other
-        // new session gets one, just pre-populated with a Drive tab and
-        // marked drive:true so it opens straight into "My Drive" and puts
-        // the sidebar in Drive mode. Saved to storage immediately (rather
-        // than left to shellSaveState()'s lazy "only once it has real
-        // content" rule) since it already has real content: a live Drive
-        // tab. Called from the Sessions page's "+ New Google Drive session"
-        // button and the sidebar switcher's matching menu action - both via
-        // window.parent.shellCreateDriveSession().
-        "function shellCreateDriveSession(){" +
+        // Mints a brand-new, independent Google Drive session for a
+        // specific already-connected account - unlike the old singleton
+        // (fixed GDRIVE_SESSION_ID, exactly one could ever exist, and
+        // implicitly "whichever Google account was connected" since there
+        // was only ever one of those too), this generates a normal session
+        // id the same way any other new session gets one, just
+        // pre-populated with a Drive tab pointed at that one account (see
+        // ShellScript's &account= query param convention, threaded through
+        // every /gdrive* URL - GDriveBrowseHandler.java and friends) and
+        // marked drive:true so it opens straight into that account's "My
+        // Drive" and puts the sidebar in Drive mode. Saved to storage
+        // immediately (rather than left to shellSaveState()'s lazy "only
+        // once it has real content" rule) since it already has real
+        // content: a live Drive tab. Never called directly by a button -
+        // always through shellOpenDrivePicker() below, which is what
+        // actually asks which account to use.
+        "function shellCreateDriveSession(accountId){" +
           "var id=shellGenerateSessionId();" +
           "var tabId='tab-'+(++shellTabCounter);" +
           "var sessions=shellLoadSessionsMap();" +
           "sessions[id]={" +
-            "id:id, name:'Google Drive', named:false, drive:true," +
-            "tabs:[{id:tabId, url:'/gdrive?path=', title:'Google Drive', groupId:null}]," +
+            "id:id, name:'Google Drive', named:false, drive:true, accountId:accountId," +
+            "tabs:[{id:tabId, url:'/gdrive?path=&account='+encodeURIComponent(accountId), title:'Google Drive', groupId:null}]," +
             "groups:[], active:tabId, createdAt:Date.now(), updatedAt:Date.now()" +
           "};" +
           "shellSaveSessionsMap(sessions);" +
           "shellLoadSession(id, true);" +
           "return id;" +
+        "}" +
+
+        // The account picker: a small modal (built with plain DOM calls
+        // rather than server-rendered markup, since ShellScript.java only
+        // ever runs inside the always-loaded top shell frame - see
+        // AppShellHandler.java - not a page of its own) offering every
+        // currently-connected Google account plus "Add a Google account",
+        // used whenever a new Drive session needs one (the Sessions page's
+        // "+ New Google Drive session" button and the sidebar switcher's
+        // matching menu action both call this instead of
+        // shellCreateDriveSession() directly - see SessionsHandler.java and
+        // this file's shellRenderSessionMenu()).
+        //
+        // "Add a Google account" opens /gauth/start?context=picker in an
+        // actual popup window rather than navigating anything in the shell
+        // itself away (see GoogleAuthHandler.java's class comment for why
+        // context=picker specifically - it skips the "reload window.opener"
+        // behavior Settings' own connect flow relies on, which would
+        // otherwise reload/destroy this entire shell out from under every
+        // open tab). Instead this just polls until that popup closes, then
+        // re-fetches the account list - simple and doesn't depend on
+        // postMessage/cross-window coordination working just right.
+        "function shellOpenDrivePicker(){" +
+          "if(document.getElementById('gdrivePickerOverlay')) return;" +
+          "var overlay=document.createElement('div');" +
+          "overlay.id='gdrivePickerOverlay';" +
+          "overlay.className='gdrive-picker-overlay';" +
+          "overlay.innerHTML=\"<div class='gdrive-picker-box'>\" +" +
+            "\"<div class='gdrive-picker-header'>Choose a Google account<button class='gdrive-picker-close' id='gdrivePickerClose' aria-label='Close'>&times;</button></div>\" +" +
+            "\"<div class='gdrive-picker-list' id='gdrivePickerList'><p class='gdrive-picker-loading'>Loading accounts...</p></div>\" +" +
+            "\"<button class='gdrive-picker-add' id='gdrivePickerAdd'>+ Add a Google account</button>\" +" +
+          "\"</div>\";" +
+          "document.body.appendChild(overlay);" +
+          "overlay.addEventListener('click', function(e){ if(e.target===overlay) shellCloseDrivePicker(); });" +
+          "document.getElementById('gdrivePickerClose').addEventListener('click', shellCloseDrivePicker);" +
+          "document.getElementById('gdrivePickerAdd').addEventListener('click', shellDrivePickerAddAccount);" +
+          "shellRefreshDrivePickerList();" +
+        "}" +
+        "function shellCloseDrivePicker(){" +
+          "var overlay=document.getElementById('gdrivePickerOverlay');" +
+          "if(overlay) overlay.remove();" +
+        "}" +
+        "function shellRefreshDrivePickerList(){" +
+          "var list=document.getElementById('gdrivePickerList');" +
+          "if(!list) return;" +
+          "fetch('/gdrive-accounts').then(function(r){return r.json();}).then(function(accounts){" +
+            "list=document.getElementById('gdrivePickerList');" +
+            "if(!list) return;" +
+            "if(!accounts.length){ list.innerHTML=\"<p class='gdrive-picker-empty'>No Google accounts connected yet - add one below.</p>\"; return; }" +
+            "list.innerHTML=accounts.map(function(a){" +
+              "var label=a.name||a.email||'(unknown account)';" +
+              "var sub=(a.name&&a.email)?a.email:'';" +
+              "var avatar=a.picture?\"<img class='gdrive-picker-avatar' src='\"+a.picture+\"' alt=''>\":\"<div class='gdrive-picker-avatar gdrive-picker-avatar-fallback'>\"+label.charAt(0).toUpperCase()+\"</div>\";" +
+              "return \"<div class='gdrive-picker-row' data-account-id='\"+a.id+\"'>\"+avatar+" +
+                "\"<div class='gdrive-picker-row-text'><div class='gdrive-picker-row-name'>\"+label+\"</div>\"+(sub?\"<div class='gdrive-picker-row-email'>\"+sub+\"</div>\":'')+\"</div>\"+" +
+              "\"</div>\";" +
+            "}).join('');" +
+            "Array.prototype.forEach.call(list.querySelectorAll('.gdrive-picker-row'), function(row){" +
+              "row.addEventListener('click', function(){" +
+                "var accountId=row.dataset.accountId;" +
+                "shellCloseDrivePicker();" +
+                "shellCreateDriveSession(accountId);" +
+              "});" +
+            "});" +
+          "}).catch(function(){" +
+            "list=document.getElementById('gdrivePickerList');" +
+            "if(list) list.innerHTML=\"<p class='gdrive-picker-empty'>Couldn't load connected accounts.</p>\";" +
+          "});" +
+        "}" +
+        "function shellDrivePickerAddAccount(){" +
+          "var popup=window.open('/gauth/start?context=picker','gdrivePickerConnect','width=520,height=680,menubar=no,toolbar=no,location=yes,status=no,resizable=yes,scrollbars=yes');" +
+          "if(!popup) return;" +
+          "var timer=setInterval(function(){" +
+            "if(popup.closed){ clearInterval(timer); shellRefreshDrivePickerList(); }" +
+          "}, 700);" +
         "}" +
 
         // inheritGroup (optional): when true and the tab initiating this
@@ -545,6 +630,7 @@ public class ShellScript {
         // (the "+" button, restoring the dashboard, etc.) so those keep
         // their existing outside-any-group behavior.
         "function openTab(url, fallbackLabel, inheritGroup){" +
+          "url=gdriveQualifyUrl(url);" +
           "var existing=shellTabs.find(function(t){ return t.url===url; });" +
           "if(existing){ shellSetActiveTab(existing.id); return false; }" +
           "var id='tab-'+(++shellTabCounter);" +
@@ -567,7 +653,29 @@ public class ShellScript {
         // one every time. openTab() (above) is reserved for things that
         // should genuinely open alongside what you're already looking at,
         // like the "+" button or "Open Viewer".
+        // Sidebar links (Home, Home folders, Home files - see
+        // SidebarRenderer.java) are static, server-rendered once, shared by
+        // every tab/session regardless of which Google account (if any) a
+        // given Drive session belongs to - they can't know accountId ahead
+        // of time the way GDriveBrowseHandler.java's own generated links
+        // do. So instead, both navigation entry points below (regular
+        // in-tab navigation, and opening a fresh tab) qualify any bare
+        // /gdrive* URL with the current session's accountId themselves,
+        // right before actually navigating - transparent to the sidebar
+        // markup itself, and a no-op for URLs that already carry their own
+        // &account= (i.e. everything GDriveBrowseHandler.java generates).
+        "function gdriveQualifyUrl(url){" +
+          "if(!shellSessionIsDrive || !url || url.indexOf('/gdrive')!==0 || url.indexOf('account=')!==-1) return url;" +
+          "var accountId=shellCurrentDriveAccountId();" +
+          "if(!accountId) return url;" +
+          "return url+(url.indexOf('?')===-1?'?':'&')+'account='+encodeURIComponent(accountId);" +
+        "}" +
+        "function shellCurrentDriveAccountId(){" +
+          "var s=shellLoadSessionsMap()[shellSessionId];" +
+          "return s&&s.accountId;" +
+        "}" +
         "function navigateCurrentTab(url){" +
+          "url=gdriveQualifyUrl(url);" +
           "if(!shellActiveTabId){ return openTab(url); }" +
           "var iframe=document.getElementById(shellActiveTabId+'-frame');" +
           "if(!iframe){ return openTab(url); }" +
@@ -1207,7 +1315,7 @@ public class ShellScript {
             "if(shellSessionIsDrive){" +
               "var q=document.getElementById('addressBarInput').value.trim();" +
               "if(!q){ renderAddressSuggestions([], ''); return; }" +
-              "fetch('/gdrive-suggest?q='+encodeURIComponent(q)+'&foldersOnly=1').then(function(r){return r.json();})" +
+              "fetch('/gdrive-suggest?q='+encodeURIComponent(q)+'&foldersOnly=1'+(shellCurrentDriveAccountId()?('&account='+encodeURIComponent(shellCurrentDriveAccountId())):'')).then(function(r){return r.json();})" +
                 ".then(function(items){ renderDriveAddressSuggestions(items); })" +
                 ".catch(function(){ renderDriveAddressSuggestions([]); });" +
               "return;" +

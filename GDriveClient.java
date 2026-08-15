@@ -50,8 +50,8 @@ public class GDriveClient {
     // local folders. Capped at 200 items in this pass (see class comment);
     // larger folders just show their first 200 rather than paginating.
     @SuppressWarnings("unchecked")
-    public static List<DriveItem> listChildren(String folderId) throws IOException {
-        String token = GDriveAuth.getValidAccessToken();
+    public static List<DriveItem> listChildren(String accountId, String folderId) throws IOException {
+        String token = GDriveAuth.getValidAccessToken(accountId);
         String q = "'" + folderId.replace("'", "\\'") + "' in parents and trashed = false";
         String url = "https://www.googleapis.com/drive/v3/files"
             + "?q=" + urlEncode(q)
@@ -87,8 +87,8 @@ public class GDriveClient {
     // bytes in GDriveDownloadHandler.java, rather than trusting whatever
     // mime/name the query string claims.
     @SuppressWarnings("unchecked")
-    public static DriveItem getMetadata(String fileId) throws IOException {
-        String token = GDriveAuth.getValidAccessToken();
+    public static DriveItem getMetadata(String accountId, String fileId) throws IOException {
+        String token = GDriveAuth.getValidAccessToken(accountId);
         String url = "https://www.googleapis.com/drive/v3/files/" + urlEncode(fileId)
             + "?fields=" + urlEncode("id,name,mimeType,size,webViewLink,thumbnailLink");
         Map<String, Object> m = GDriveAuth.getJson(url, token);
@@ -108,8 +108,8 @@ public class GDriveClient {
     // since Drive files can be large. Caller is responsible for having
     // already sent response headers (status/content-type/length) before
     // calling this.
-    public static void streamFile(String fileId, OutputStream dest) throws IOException {
-        String token = GDriveAuth.getValidAccessToken();
+    public static void streamFile(String accountId, String fileId, OutputStream dest) throws IOException {
+        String token = GDriveAuth.getValidAccessToken(accountId);
         String url = "https://www.googleapis.com/drive/v3/files/" + urlEncode(fileId) + "?alt=media";
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
         conn.setRequestMethod("GET");
@@ -137,8 +137,8 @@ public class GDriveClient {
     // so it's a reasonable read on "search" for this data model rather
     // than a compromise - see GDriveSearchHandler.java.
     @SuppressWarnings("unchecked")
-    public static List<DriveItem> search(String nameQuery) throws IOException {
-        String token = GDriveAuth.getValidAccessToken();
+    public static List<DriveItem> search(String accountId, String nameQuery) throws IOException {
+        String token = GDriveAuth.getValidAccessToken(accountId);
         String escaped = nameQuery.replace("\\", "\\\\").replace("'", "\\'");
         String q = "name contains '" + escaped + "' and trashed = false";
         String url = "https://www.googleapis.com/drive/v3/files"
