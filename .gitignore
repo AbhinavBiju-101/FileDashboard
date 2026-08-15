@@ -1,0 +1,14 @@
+*.class
+bin/
+out/
+build/
+target/
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+*.log
+.env
