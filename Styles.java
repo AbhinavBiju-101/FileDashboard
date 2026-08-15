@@ -1,5 +1,15 @@
 public class Styles {
+    // A small blue folder glyph, inlined as an SVG data URI so no extra file
+    // or route is needed. Sits at the front of CSS (below) so every page
+    // that appends Styles.CSS - which is all of them - gets it automatically,
+    // rather than needing to remember to add it handler-by-handler.
+    public static final String FAVICON =
+        "<link rel='icon' href=\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3E" +
+        "%3Cpath%20fill='%232563eb'%20d='M3%205a2%202%200%200%201%202-2h4l2%202h8a2%202%200%200%201%202%202v10a2%202%200%200%201-2%202H5" +
+        "a2%202%200%200%201-2-2V5z'/%3E%3C/svg%3E\">";
+
     public static final String CSS =
+        FAVICON +
         "<style>" +
         "*{box-sizing:border-box;}" +
         "body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#f4f5f7;margin:0;padding:0;color:#1f2328;}" +
@@ -81,8 +91,9 @@ public class Styles {
         ".tabbar{display:flex;align-items:flex-end;gap:4px;background:#eef0f2;border-bottom:1px solid #d5d8dc;" +
           "padding:6px 8px 0;overflow-x:auto;flex-shrink:0;}" +
         ".tab{display:flex;align-items:center;gap:8px;background:#e4e6e9;border:1px solid #d5d8dc;border-bottom:none;" +
-          "border-radius:8px 8px 0 0;padding:7px 6px 7px 12px;font-size:13px;cursor:pointer;white-space:nowrap;color:#555;}" +
+          "border-radius:8px 8px 0 0;padding:7px 6px 7px 12px;font-size:13px;cursor:grab;white-space:nowrap;color:#555;}" +
         ".tab.active{background:#fff;color:#111;font-weight:600;}" +
+        ".tab.dragging{opacity:.4;cursor:grabbing;}" +
         ".tab-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px;}" +
         ".tab-close{font-size:15px;line-height:1;color:#888;padding:0 4px;border-radius:4px;}" +
         ".tab-close:hover{color:#c00;background:rgba(0,0,0,.06);}" +

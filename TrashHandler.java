@@ -74,7 +74,7 @@ public class TrashHandler implements HttpHandler {
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"card\" data-path=\"").append(e.id)
           .append("\" data-name=\"").append(name)
-          .append("\" data-type=\"trash\">");
+          .append("\" data-type=\"trash\" data-isdir=\"").append(e.isDirectory ? "1" : "0").append("\">");
         sb.append("<div class=\"icon\">").append(icon).append("</div>");
         sb.append("<div class=\"name\" title=\"").append(name).append("\">").append(name).append("</div>");
         if (!e.isDirectory) {

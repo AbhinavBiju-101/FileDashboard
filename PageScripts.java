@@ -20,6 +20,7 @@ public class PageScripts {
         "<span id='previewTitle' class='preview-title'></span>" +
         "<div class='preview-header-actions'>" +
         "<span id='previewExtraAction'></span>" +
+        "<span id='previewViewerAction'></span>" +
         "<a id='previewDownloadLink' href='#' class='preview-download'>Download</a>" +
         "<button class='preview-close' onclick='closePreview()' aria-label='Close'>&times;</button>" +
         "</div></div>" +
@@ -48,13 +49,20 @@ public class PageScripts {
         "var PREVIEW_TEXT_EXTS=['txt','md','csv','json','xml','log','html','htm','css','js','ts','java','py','c','cpp','h','hpp','sh','yml','yaml','ini','conf','properties'];" +
 
         "var currentPreviewPath=null;" +
-        "function openPreview(path, name, ext, viewable){" +
+        "function openPreview(path, name, ext, viewable, textlike){" +
           "currentPreviewPath=path;" +
           "var overlay=document.getElementById('previewOverlay');" +
           "var body=document.getElementById('previewBody');" +
           "document.getElementById('previewTitle').textContent=name;" +
           "document.getElementById('previewDownloadLink').href='/file?path='+encodeURIComponent(path)+'&mode=download';" +
           "document.getElementById('previewExtraAction').innerHTML='';" +
+          // Same file types the right-click "Open Viewer" menu item offers
+          // (pdf, or anything text-like) - the viewer's dedicated reading
+          // mode only really has something extra to offer for those.
+          "var viewerAction=document.getElementById('previewViewerAction');" +
+          "if(ext==='pdf'||textlike){" +
+            "viewerAction.innerHTML='<a href=\"#\" onclick=\"openPreviewInViewer(); return false;\" class=\"preview-download\">Open in Viewer</a>';" +
+          "}else{ viewerAction.innerHTML=''; }" +
           "var fileUrl='/file?path='+encodeURIComponent(path)+'&mode=view';" +
           "body.innerHTML='';" +
 
@@ -106,6 +114,18 @@ public class PageScripts {
           "document.getElementById('previewBody').innerHTML='';" +
           "currentPreviewPath=null;" +
         "}" +
+        // Hands off the file currently open in the quick-preview modal to
+        // the full Viewer tab (same destination as the right-click "Open
+        // Viewer" menu item), then closes the modal since the person is
+        // continuing to look at the same file, just in a bigger view.
+        "function openPreviewInViewer(){" +
+          "if(!currentPreviewPath) return;" +
+          "var name=document.getElementById('previewTitle').textContent;" +
+          "var viewerUrl='/viewer?path='+encodeURIComponent(currentPreviewPath);" +
+          "closePreview();" +
+          "if(window.parent && window.parent.openTab){ window.parent.openTab(viewerUrl, name); }" +
+          "else{ window.open(viewerUrl, '_blank'); }" +
+        "}" +
         "function isViewableExt(ext){" +
           "return PREVIEW_IMAGE_EXTS.indexOf(ext)!==-1||PREVIEW_AUDIO_EXTS.indexOf(ext)!==-1||" +
             "PREVIEW_VIDEO_EXTS.indexOf(ext)!==-1||PREVIEW_TEXT_EXTS.indexOf(ext)!==-1||ext==='pdf';" +
@@ -122,7 +142,7 @@ public class PageScripts {
           "if(idx===-1||cards.length===0) return;" +
           "var nextIdx=(idx+direction+cards.length)%cards.length;" +
           "var next=cards[nextIdx];" +
-          "openPreview(next.dataset.path, next.dataset.name, next.dataset.ext, next.dataset.viewable==='1');" +
+          "openPreview(next.dataset.path, next.dataset.name, next.dataset.ext, next.dataset.viewable==='1', next.dataset.textlike==='1');" +
           "if(typeof selectOnly==='function') selectOnly(next);" +
         "}" +
 
@@ -166,9 +186,17 @@ public class PageScripts {
 
         "document.addEventListener('dblclick', function(e){" +
           "var card=e.target.closest('.card[data-path]');" +
-          "if(!card || card.dataset.type==='trash') return;" +
+          "if(!card) return;" +
+          "if(card.dataset.type==='trash'){" +
+            // Trashed items live outside the normal browse tree, so a
+            // trashed folder can't just reuse /browse?path=... - it needs
+            // its own read-only listing (see /trash-browse) that can see
+            // inside the recycle bin without restoring it first.
+            "if(card.dataset.isdir==='1'){ location.href='/trash-browse?id='+encodeURIComponent(card.dataset.path); }" +
+            "return;" +
+          "}" +
           "if(card.dataset.type==='folder'){ location.href='/browse?path='+encodeURIComponent(card.dataset.path); }" +
-          "else{ openPreview(card.dataset.path, card.dataset.name, card.dataset.ext, card.dataset.viewable==='1'); }" +
+          "else{ openPreview(card.dataset.path, card.dataset.name, card.dataset.ext, card.dataset.viewable==='1', card.dataset.textlike==='1'); }" +
         "});" +
 
         // ---- Context menu ----
@@ -223,6 +251,10 @@ public class PageScripts {
             "var card=lastSelectedCard;" +
             "var type=card.dataset.type;" +
             "if(type==='trash'){" +
+              "if(card.dataset.isdir==='1'){" +
+                "html+=menuItem('Open','open-trash-folder');" +
+                "html+=menuDivider();" +
+              "}" +
               "html+=menuItem('Restore','restore-item');" +
               "html+=menuDivider();" +
               "html+=menuItem('Delete forever','permanent-delete-item');" +
@@ -295,7 +327,7 @@ public class PageScripts {
           "var card=lastSelectedCard;" +
           "if(action==='open-item'){" +
             "if(card.dataset.type==='folder'){ location.href='/browse?path='+encodeURIComponent(card.dataset.path); }" +
-            "else{ openPreview(card.dataset.path, card.dataset.name, card.dataset.ext, card.dataset.viewable==='1'); }" +
+            "else{ openPreview(card.dataset.path, card.dataset.name, card.dataset.ext, card.dataset.viewable==='1', card.dataset.textlike==='1'); }" +
           "}else if(action==='open-new-tab'){" +
             "var mode=isViewableExt(card.dataset.ext)?'view':'preview';" +
             "window.open('/file?path='+encodeURIComponent(card.dataset.path)+'&mode='+mode, '_blank');" +
@@ -317,6 +349,7 @@ public class PageScripts {
           "else if(action==='zip-current-folder'){" +
             "window.location.href='/zip?path='+encodeURIComponent(document.getElementById('contextMenu').dataset.folderPath);" +
           "}else if(action==='restore-item'){ restoreItem(card.dataset.path, card.dataset.name); }" +
+          "else if(action==='open-trash-folder'){ location.href='/trash-browse?id='+encodeURIComponent(card.dataset.path); }" +
           "else if(action==='permanent-delete-item'){ permanentDeleteItem(card.dataset.path, card.dataset.name); }" +
           "else if(action==='restore-selection'){" +
             "Promise.all(selectedPaths.map(function(id){" +
@@ -520,7 +553,7 @@ public class PageScripts {
               "if(type==='folder'){ location.href='/browse?path='+encodeURIComponent(path); }" +
               "else{" +
                 "var ext=name.indexOf('.')!==-1?name.split('.').pop().toLowerCase():'';" +
-                "openPreview(path,name,ext,isViewableExt(ext));" +
+                "openPreview(path,name,ext,isViewableExt(ext),PREVIEW_TEXT_EXTS.indexOf(ext)!==-1);" +
               "}" +
               "return;" +
             "}" +

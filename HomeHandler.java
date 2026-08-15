@@ -113,12 +113,28 @@ public class HomeHandler implements HttpHandler {
         return sb.toString();
     }
 
+    // Polls /dashboard-events every few seconds for RecentActivity's version
+    // counter and reloads the page when it changes. See DashboardEventsHandler
+    // for why this is a poll rather than a long-held SSE connection - the
+    // short version: SSE meant one more persistent connection competing with
+    // every open Browse tab's own "/events" stream for the browser's 6-per-origin
+    // connection cap, which is how "Recently downloaded" ended up silently
+    // stuck. A poll opens and closes immediately each time, so it can't get
+    // queued behind those longer-lived connections.
     private String dashboardRefreshScript() {
         return "<script>" +
-               "try{" +
-               "const es = new EventSource('/dashboard-events');" +
-               "es.onmessage = function(e){ if(e.data === 'refresh'){ location.reload(); } };" +
-               "}catch(err){ console.warn('Dashboard live refresh unavailable:', err); }" +
+               "(function(){" +
+               "var lastVersion=null;" +
+               "function poll(){" +
+                 "fetch('/dashboard-events').then(function(r){ return r.json(); }).then(function(data){" +
+                   "if(data.version===-1) return;" + // live refresh turned off in Settings
+                   "if(lastVersion===null){ lastVersion=data.version; return; }" +
+                   "if(data.version!==lastVersion){ location.reload(); }" +
+                 "}).catch(function(){ /* offline or server restarting - try again next tick */ });" +
+               "}" +
+               "poll();" +
+               "setInterval(poll, 3000);" +
+               "})();" +
                "</script>";
     }
 

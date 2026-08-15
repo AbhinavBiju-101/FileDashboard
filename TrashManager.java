@@ -115,6 +115,10 @@ public class TrashManager {
         }
     }
 
+    public static synchronized Entry get(String id) {
+        return entries.get(id);
+    }
+
     public static List<Entry> list() {
         List<Entry> list = new ArrayList<>(entries.values());
         list.sort((a, b) -> Long.compare(b.deletedTime, a.deletedTime)); // newest first

@@ -16,6 +16,7 @@ public class ShellScript {
         "var shellTabs=[];" +
         "var shellActiveTabId=null;" +
         "var shellTabCounter=0;" +
+        "var shellDragTabId=null;" +
 
         "function shellSaveState(){" +
           "try{ localStorage.setItem('fileDashboardTabs', JSON.stringify({tabs:shellTabs, active:shellActiveTabId})); }catch(e){}" +
@@ -82,6 +83,25 @@ public class ShellScript {
           "btn.appendChild(titleSpan); btn.appendChild(closeSpan);" +
           "tabbar.insertBefore(btn, newTabBtn);" +
 
+          // Drag-to-reorder: dragover moves the dragged tab's DOM node live
+          // (classic sortable-list trick), so the person sees tabs shuffle
+          // as they drag rather than only on drop. shellTabs (the array
+          // that actually gets persisted) is re-synced from the resulting
+          // DOM order once the drag ends, whatever element it ends over.
+          "btn.draggable=true;" +
+          "btn.addEventListener('dragstart', function(e){" +
+            "shellDragTabId=id;" +
+            "btn.classList.add('dragging');" +
+            "e.dataTransfer.effectAllowed='move';" +
+            "try{ e.dataTransfer.setData('text/plain', id); }catch(err){}" +
+          "});" +
+          "btn.addEventListener('dragover', function(e){ shellTabDragOver(e, id); });" +
+          "btn.addEventListener('dragend', function(){" +
+            "btn.classList.remove('dragging');" +
+            "shellDragTabId=null;" +
+            "shellSyncTabOrderFromDom();" +
+          "});" +
+
           "var iframe=document.createElement('iframe');" +
           "iframe.id=id+'-frame'; iframe.src=url;" +
           "iframe.onload=function(){" +
@@ -105,6 +125,27 @@ public class ShellScript {
           "if(tabObj){ tabObj.title=newTitle; if(newUrl) tabObj.url=newUrl; }" +
           "var btn=document.getElementById(id);" +
           "if(btn){ var span=btn.querySelector('.tab-title'); if(span) span.textContent=newTitle; }" +
+          "shellSaveState();" +
+        "}" +
+
+        "function shellTabDragOver(e, overId){" +
+          "e.preventDefault();" +
+          "if(!shellDragTabId || shellDragTabId===overId) return;" +
+          "var dragging=document.getElementById(shellDragTabId);" +
+          "var over=document.getElementById(overId);" +
+          "if(!dragging||!over) return;" +
+          "var rect=over.getBoundingClientRect();" +
+          "var before=(e.clientX-rect.left)<rect.width/2;" +
+          "var tabbar=document.getElementById('tabbar');" +
+          "tabbar.insertBefore(dragging, before?over:over.nextSibling);" +
+        "}" +
+
+        // Reorders shellTabs (the array that gets persisted to
+        // localStorage) to match whatever order the tab elements ended up
+        // in after dragging, so a reload restores tabs in the new order.
+        "function shellSyncTabOrderFromDom(){" +
+          "var order=Array.prototype.map.call(document.querySelectorAll('#tabbar .tab'), function(el){ return el.id; });" +
+          "shellTabs.sort(function(a,b){ return order.indexOf(a.id)-order.indexOf(b.id); });" +
           "shellSaveState();" +
         "}" +
 
