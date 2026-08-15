@@ -130,7 +130,7 @@ public class ShellScript {
           "shellSaveState();" +
         "}" +
 
-        // ---- Address bar (press "/" to open, type a path, Enter to go) ----
+        // ---- Address bar (press "/" to open, type/click to browse, Enter to go) ----
         "function openAddressBar(){" +
           "var overlay=document.getElementById('addressBarOverlay');" +
           "var input=document.getElementById('addressBarInput');" +
@@ -143,24 +143,69 @@ public class ShellScript {
           "overlay.classList.add('open');" +
           "input.focus();" +
           "input.select();" +
+          "updateAddressSuggestions();" +
         "}" +
         "function closeAddressBar(){" +
           "document.getElementById('addressBarOverlay').classList.remove('open');" +
           "document.getElementById('addressBarInput').blur();" +
+          "var box=document.getElementById('addressBarSuggestions');" +
+          "box.innerHTML=''; box.classList.remove('open');" +
         "}" +
-        "function goToAddressBarPath(){" +
-          "var raw=document.getElementById('addressBarInput').value;" +
+
+        // Strips the root's own absolute path if someone pasted a full path
+        // (e.g. "C:/Users/You/Documents" when root is "C:/Users/You"), and
+        // normalizes backslashes/leading slashes. Shared by both live
+        // suggestions and final Enter-navigation, so they can never disagree
+        // about what a given typed string actually means.
+        "function normalizeAddressBarInput(raw){" +
           "var normalized=raw.replace(/\\\\/g,'/').trim();" +
           "var rootNormalized=SHELL_ROOT_ABS.replace(/\\\\/g,'/');" +
-          // Strip the root's own absolute path if someone pasted a full path
-          // (e.g. "C:/Users/You/Documents" when root is "C:/Users/You").
           "if(normalized.toLowerCase().indexOf(rootNormalized.toLowerCase())===0){" +
             "normalized=normalized.substring(rootNormalized.length);" +
           "}" +
           "while(normalized.charAt(0)==='/') normalized=normalized.substring(1);" +
+          "return normalized;" +
+        "}" +
+
+        "function goToAddressBarPath(){" +
+          "var normalized=normalizeAddressBarInput(document.getElementById('addressBarInput').value);" +
+          "while(normalized.endsWith('/')) normalized=normalized.slice(0,-1);" +
           "closeAddressBar();" +
           "navigateCurrentTab('/browse?path='+encodeURIComponent(normalized));" +
         "}" +
+
+        // Splits the current input into "the folder we're listing" (up to
+        // the last slash) and "what's typed after it" (used as a filter
+        // prefix), fetches that folder's real subfolders, and renders
+        // whichever ones match. Works whether the input ends in a slash
+        // (show everything in that folder) or not (filter-as-you-type).
+        "var addressSuggestDebounce=null;" +
+        "function updateAddressSuggestions(){" +
+          "clearTimeout(addressSuggestDebounce);" +
+          "addressSuggestDebounce=setTimeout(function(){" +
+            "var normalized=normalizeAddressBarInput(document.getElementById('addressBarInput').value);" +
+            "var lastSlash=normalized.lastIndexOf('/');" +
+            "var dirPart=lastSlash===-1?'':normalized.substring(0,lastSlash);" +
+            "var partial=lastSlash===-1?normalized:normalized.substring(lastSlash+1);" +
+            "fetch('/subfolders?path='+encodeURIComponent(dirPart)).then(function(r){return r.json();}).then(function(folders){" +
+              "var filtered=folders.filter(function(f){" +
+                "return f.name.toLowerCase().indexOf(partial.toLowerCase())===0;" +
+              "});" +
+              "renderAddressSuggestions(filtered, dirPart);" +
+            "}).catch(function(){ renderAddressSuggestions([], dirPart); });" +
+          "}, 120);" +
+        "}" +
+        "function renderAddressSuggestions(folders, dirPart){" +
+          "var box=document.getElementById('addressBarSuggestions');" +
+          "if(!folders.length){ box.innerHTML=''; box.classList.remove('open'); return; }" +
+          "box.innerHTML=folders.map(function(f){" +
+            "var full=dirPart?dirPart+'/'+f.name:f.name;" +
+            "var p=full.replace(/\"/g,'&quot;');" +
+            "return '<div class=\"address-suggestion-item\" data-address-path=\"'+p+'\">&#128193; '+f.name+'</div>';" +
+          "}).join('');" +
+          "box.classList.add('open');" +
+        "}" +
+
         "document.addEventListener('keydown', function(e){" +
           "if(e.key==='/' && document.activeElement.tagName!=='INPUT' && document.activeElement.tagName!=='TEXTAREA'){" +
             "e.preventDefault();" +
@@ -171,6 +216,17 @@ public class ShellScript {
           "if(e.key==='Enter'){ goToAddressBarPath(); }" +
           "else if(e.key==='Escape'){ closeAddressBar(); }" +
           "e.stopPropagation();" +
+        "});" +
+        "document.getElementById('addressBarInput') && document.getElementById('addressBarInput').addEventListener('input', function(){" +
+          "updateAddressSuggestions();" +
+        "});" +
+        "document.addEventListener('click', function(e){" +
+          "var item=e.target.closest('.address-suggestion-item');" +
+          "if(!item) return;" +
+          "var input=document.getElementById('addressBarInput');" +
+          "input.value='/'+item.dataset.addressPath+'/';" +
+          "input.focus();" +
+          "updateAddressSuggestions();" +
         "});" +
 
         "document.addEventListener('DOMContentLoaded', function(){" +

@@ -8,7 +8,12 @@
  */
 public class PageScripts {
 
+    public static final String CODE_HIGHLIGHT_RESOURCES =
+        "<link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css'>" +
+        "<script src='https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js'></script>";
+
     public static final String MODAL_HTML =
+        CODE_HIGHLIGHT_RESOURCES +
         "<div id='previewOverlay' class='preview-overlay' onclick=\"if(event.target===this) closePreview();\">" +
         "<div class='preview-box'>" +
         "<div class='preview-header'>" +
@@ -69,17 +74,32 @@ public class PageScripts {
           "}else if(PREVIEW_VIDEO_EXTS.indexOf(ext)!==-1){" +
             "body.innerHTML='<video controls autoplay src=\"'+fileUrl+'\"></video>';" +
           "}else{" +
-            // Anything else the server marked viewable must be text-like -
-            // that's the only remaining category (including custom/unknown
-            // extensions detected by content-sniffing rather than a
-            // hardcoded list, e.g. a homegrown .vcanvas format).
             "body.innerHTML='<pre>Loading...</pre>';" +
             "fetch(fileUrl).then(function(r){return r.text();}).then(function(text){" +
-              "var pre=document.createElement('pre'); pre.textContent=text;" +
-              "body.innerHTML=''; body.appendChild(pre);" +
+              "var d=document.createElement('div'); d.textContent=text; var esc=d.innerHTML;" +
+              "if(['txt','log','csv','md'].indexOf(ext)!==-1){" +
+                "var pre=document.createElement('pre'); pre.textContent=text;" +
+                "body.innerHTML=''; body.appendChild(pre);" +
+              "}else{" +
+                "var lang=CODE_LANG_MAP[ext]||'';" +
+                "var lc=lang?' class=\"language-'+lang+'\"':'';" +
+                "body.innerHTML='<pre class=\"code-highlighted\"><code id=\"previewCodeBlock\"'+lc+'>'+esc+'</code></pre>'+" +
+                  "'<pre class=\"code-raw plain-text\" style=\"display:none;\">'+esc+'</pre>';" +
+                "if(window.hljs){ hljs.highlightElement(document.getElementById('previewCodeBlock')); }" +
+                "document.getElementById('previewExtraAction').innerHTML=" +
+                  "'<a href=\"#\" onclick=\"toggleModalCodeView(); return false;\" id=\"modalToggleRawBtn\" class=\"preview-download\">Raw text</a>';" +
+              "}" +
             "});" +
           "}" +
           "overlay.classList.add('open');" +
+        "}" +
+        "var CODE_LANG_MAP={java:'java',py:'python',c:'c',cpp:'cpp',h:'cpp',hpp:'cpp',js:'javascript',ts:'typescript',html:'xml',htm:'xml',css:'css',json:'json',xml:'xml',yml:'yaml',yaml:'yaml',sh:'bash',ini:'ini',conf:'ini',properties:'properties'};" +
+        "function toggleModalCodeView(){" +
+          "var h=document.querySelector('#previewBody .code-highlighted'), r=document.querySelector('#previewBody .code-raw'), b=document.getElementById('modalToggleRawBtn');" +
+          "if(!h||!r) return;" +
+          "var showingRaw=r.style.display!=='none';" +
+          "if(showingRaw){ r.style.display='none'; h.style.display=''; b.textContent='Raw text'; }" +
+          "else{ r.style.display=''; h.style.display='none'; b.textContent='Formatted'; }" +
         "}" +
         "function closePreview(){" +
           "document.getElementById('previewOverlay').classList.remove('open');" +

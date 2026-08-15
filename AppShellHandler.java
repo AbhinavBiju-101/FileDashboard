@@ -39,9 +39,12 @@ public class AppShellHandler implements HttpHandler {
         sb.append("</div>");
         sb.append("<div id='addressBarOverlay' class='address-bar-overlay' onclick=\"if(event.target===this) closeAddressBar();\">");
         sb.append("<div class='address-bar-box'>");
+        sb.append("<div class='address-bar-row'>");
         sb.append("<span class='address-bar-prefix'>/</span>");
         sb.append("<input type='text' id='addressBarInput' placeholder='Documents/Books or C:\\Users\\You\\...' autocomplete='off'>");
         sb.append("<span class='address-bar-hint'>Enter to go &middot; Esc to cancel</span>");
+        sb.append("</div>");
+        sb.append("<div id='addressBarSuggestions' class='address-suggestions'></div>");
         sb.append("</div></div>");
         String rootAbsPath = Settings.rootDir().getAbsolutePath().replace("\\", "\\\\").replace("'", "\\'");
         sb.append("<script>var SHELL_ROOT_ABS='").append(rootAbsPath).append("';</script>");

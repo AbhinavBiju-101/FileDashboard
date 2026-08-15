@@ -70,6 +70,9 @@ public class ViewerHandler implements HttpHandler {
         sb.append("<meta name='viewport' content='width=device-width, initial-scale=1'>");
         sb.append("<title>").append(PathUtil.htmlEscape(file.getName())).append("</title>");
         sb.append(viewerStyles());
+        if (CodeLanguageUtil.shouldHighlight(ext) && !ext.equals("md")) {
+            sb.append(PageScripts.CODE_HIGHLIGHT_RESOURCES);
+        }
         sb.append("</head><body class='viewer-body'>");
 
         sb.append("<div class='viewer-topbar'>");
@@ -79,6 +82,9 @@ public class ViewerHandler implements HttpHandler {
             sb.append("<a href='/viewer?path=").append(PathUtil.urlEncode(prevPath)).append("'>&larr; Previous</a>");
         }
         sb.append("<a href='/file?path=").append(PathUtil.urlEncode(relPath)).append("&mode=download'>Download</a>");
+        if (ViewabilityUtil.isTextLike(file, ext) && !ext.equals("md") && CodeLanguageUtil.shouldHighlight(ext)) {
+            sb.append("<a href=\"#\" onclick=\"toggleCodeView(); return false;\" id='toggleRawBtn'>Show raw text</a>");
+        }
         if (nextPath != null) {
             sb.append("<a href='/viewer?path=").append(PathUtil.urlEncode(nextPath)).append("'>Next &rarr;</a>");
         }
@@ -90,10 +96,18 @@ public class ViewerHandler implements HttpHandler {
               .append(PathUtil.urlEncode(relPath)).append("&mode=view'></iframe>");
         } else if (ViewabilityUtil.isTextLike(file, ext)) {
             String content = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            String escaped = PathUtil.htmlEscape(content);
             if (ext.equals("md")) {
                 sb.append("<div class='viewer-reading markdown-body'>").append(MarkdownLite.render(content)).append("</div>");
+            } else if (CodeLanguageUtil.shouldHighlight(ext)) {
+                String lang = CodeLanguageUtil.hljsLanguage(ext);
+                String langClass = lang.isEmpty() ? "" : " class=\"language-" + lang + "\"";
+                sb.append("<div class='viewer-reading code-viewer'>");
+                sb.append("<pre class='code-highlighted'><code id='codeBlock'").append(langClass).append(">").append(escaped).append("</code></pre>");
+                sb.append("<pre class='code-raw plain-text' style='display:none;'>").append(escaped).append("</pre>");
+                sb.append("</div>");
             } else {
-                sb.append("<pre class='viewer-reading plain-text'>").append(PathUtil.htmlEscape(content)).append("</pre>");
+                sb.append("<pre class='viewer-reading plain-text'>").append(escaped).append("</pre>");
             }
         } else {
             sb.append("<div class='viewer-unsupported'><p>This file type doesn't have a dedicated reading view.</p>")
@@ -172,6 +186,14 @@ public class ViewerHandler implements HttpHandler {
               "if(e.key==='ArrowLeft' && VIEWER_PREV){ location.href=VIEWER_PREV; }" +
               "else if(e.key==='ArrowRight' && VIEWER_NEXT){ location.href=VIEWER_NEXT; }" +
             "});" +
+            "if(window.hljs){ var cb=document.getElementById('codeBlock'); if(cb) hljs.highlightElement(cb); }" +
+            "function toggleCodeView(){" +
+              "var h=document.querySelector('.code-highlighted'), r=document.querySelector('.code-raw'), b=document.getElementById('toggleRawBtn');" +
+              "if(!h||!r) return;" +
+              "var showingRaw=r.style.display!=='none';" +
+              "if(showingRaw){ r.style.display='none'; h.style.display=''; b.textContent='Show raw text'; }" +
+              "else{ r.style.display=''; h.style.display='none'; b.textContent='Show formatted'; }" +
+            "}" +
             "</script>";
     }
 

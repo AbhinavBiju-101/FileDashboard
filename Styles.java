@@ -36,6 +36,8 @@ public class Styles {
         ".search-suggestion-item{display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:13px;}" +
         ".search-suggestion-item:hover{background:#f4f5f7;}" +
         ".search-suggestion-icon{font-size:15px;flex-shrink:0;}" +
+        ".code-highlighted,.code-raw{width:100%;margin:0;text-align:left;overflow:auto;box-sizing:border-box;}" +
+        ".code-viewer{max-width:1400px;margin:0 auto;padding:0;}" +
         ".search-suggestion-divider{padding:6px 12px 4px;font-size:11px;color:#999;text-transform:uppercase;" +
           "letter-spacing:.03em;border-top:1px solid #f0f0f0;margin-top:2px;}" +
         ".search-inline input[type=text]{padding:6px 8px;border:1px solid #c7cbd1;border-radius:6px;font-size:13px;}" +
@@ -94,10 +96,15 @@ public class Styles {
           "align-items:flex-start;justify-content:center;padding-top:14vh;}" +
         ".address-bar-overlay.open{display:flex;}" +
         ".address-bar-box{background:#fff;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.25);" +
-          "width:560px;max-width:90vw;display:flex;align-items:center;padding:14px 18px;gap:8px;}" +
+          "width:560px;max-width:90vw;overflow:hidden;}" +
+        ".address-bar-row{display:flex;align-items:center;padding:14px 18px;gap:8px;}" +
         ".address-bar-prefix{color:#999;font-family:Menlo,Consolas,monospace;font-size:16px;}" +
         "#addressBarInput{flex:1;border:none;outline:none;font-size:16px;font-family:Menlo,Consolas,monospace;}" +
         ".address-bar-hint{color:#999;font-size:11px;white-space:nowrap;}" +
+        ".address-suggestions{display:none;max-height:260px;overflow-y:auto;border-top:1px solid #eee;}" +
+        ".address-suggestions.open{display:block;}" +
+        ".address-suggestion-item{padding:9px 18px;cursor:pointer;font-size:14px;}" +
+        ".address-suggestion-item:hover,.address-suggestion-item.active{background:#f0f5ff;}" +
         // Right-click context menu
         ".context-menu{display:none;position:fixed;z-index:2000;background:#fff;border:1px solid #d5d8dc;" +
           "border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.15);min-width:180px;padding:6px 0;font-size:13px;}" +
