@@ -31,7 +31,7 @@ public class DashboardEventsHandler implements HttpHandler {
 
     @Override
     public void handle(HttpExchange exchange) throws IOException {
-        long version = Settings.isLiveRefreshEnabled() ? RecentActivity.getVersion() : -1;
+        long version = Settings.isLiveRefreshEnabled() ? (RecentActivity.getVersion() + ActivityLog.getVersion()) : -1;
         String json = "{\"version\": " + version + "}";
         byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");

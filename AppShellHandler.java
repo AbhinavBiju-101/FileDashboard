@@ -35,6 +35,7 @@ public class AppShellHandler implements HttpHandler {
         sb.append("<div id='tabbar' class='tabbar'>");
         sb.append("<button id='newTabBtn' class='tab-new' onclick=\"openTab('/quickstart','Quick Start')\" title='New tab'>+</button>");
         sb.append("</div>");
+        sb.append("<div id='tabContextMenu' class='context-menu'></div>");
         sb.append("<div id='tabcontent' class='tabcontent'></div>");
         sb.append("</div>");
         sb.append("<div id='addressBarOverlay' class='address-bar-overlay' onclick=\"if(event.target===this) closeAddressBar();\">");

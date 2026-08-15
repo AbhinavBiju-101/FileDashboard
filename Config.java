@@ -48,6 +48,13 @@ public class Config {
     // the drive root.
     public static final File TRASH_DIR = new File(System.getProperty("user.home"), ".trash");
 
+    // How long a deleted item sits in the trash before being permanently
+    // removed automatically (TrashManager checks for expired items on a
+    // timer - see TrashManager.startAutoPurgeScheduler()). Trash cards show
+    // a countdown based on this. Set to 0 or less to disable auto-purging
+    // entirely and keep the traditional "only I empty the trash" behavior.
+    public static final int TRASH_RETENTION_DAYS = 30;
+
     private static File computeDiskRoot() {
         File home = new File(System.getProperty("user.home"));
         Path root = home.toPath().getRoot();

@@ -38,7 +38,13 @@ public class PageScripts {
         "<div class='move-modal-actions'>" +
         "<button onclick='closeMoveModal()'>Cancel</button>" +
         "<button onclick='confirmMoveHere()' class='move-confirm'>Move here</button>" +
-        "</div></div></div>";
+        "</div></div></div>" +
+
+        "<div id='actionToast' class='action-toast'>" +
+        "<span id='actionToastMessage'></span>" +
+        "<button id='actionToastBtn' class='action-toast-btn'>Undo</button>" +
+        "<button class='action-toast-close' onclick='hideActionToast()' aria-label='Dismiss'>&times;</button>" +
+        "</div>";
 
     public static final String SCRIPT =
         "<script>" +
@@ -327,6 +333,8 @@ public class PageScripts {
               "}" +
               "html+=menuItem('Open in new tab','open-new-tab');" +
               "html+=menuItem('Download','download-item');" +
+              "html+=menuItem('Reveal in file manager','reveal-item');" +
+              "html+=menuItem('Copy path','copy-path-item');" +
               "html+=menuDivider();" +
               "html+=menuItem('Rename','rename-item');" +
               "html+=menuItem('Duplicate','duplicate-item');" +
@@ -335,6 +343,8 @@ public class PageScripts {
               "html+=menuItem('Delete','delete-item');" +
             "}else{" +
               "html+=menuItem('Open','open-item');" +
+              "html+=menuItem('Reveal in file manager','reveal-item');" +
+              "html+=menuItem('Copy path','copy-path-item');" +
               "html+=menuDivider();" +
               "html+=menuItem('Rename','rename-item');" +
               "html+=menuItem('Duplicate','duplicate-item');" +
@@ -421,6 +431,8 @@ public class PageScripts {
           "else if(action==='duplicate-item'){ duplicateItem(card.dataset.path); }" +
           "else if(action==='delete-item'){ deleteItem(card.dataset.path, card.dataset.name); }" +
           "else if(action==='move-item'){ openMoveModal([card.dataset.path]); }" +
+          "else if(action==='reveal-item'){ revealInFileManager(card.dataset.path); }" +
+          "else if(action==='copy-path-item'){ copyPathToClipboard(card.dataset.path); }" +
           "else if(action==='zip-selection'){" +
             "window.location.href='/zip-selection?paths='+encodeURIComponent(selectedPaths.join('|'));" +
           "}else if(action==='move-selection'){ openMoveModal(selectedPaths.slice()); }" +
@@ -455,6 +467,103 @@ public class PageScripts {
           "}" +
         "}" +
 
+        // ---- Undo/redo action toast (move & rename only - deletes already
+        // have the Trash safety net, so they're deliberately not part of
+        // this) ----
+        // Stacks persist in sessionStorage (not JS variables) because every
+        // action here reloads the page/iframe afterward, which would
+        // otherwise wipe them. Same-origin iframes in the same tab share
+        // sessionStorage, so this survives the reload just fine.
+        "var UNDO_STACK_KEY='fd-undo-stack', REDO_STACK_KEY='fd-redo-stack', PENDING_TOAST_KEY='fd-pending-toast';" +
+        "var UNDO_STACK_CAP=10;" +
+        "function loadStack(key){" +
+          "try{ var raw=sessionStorage.getItem(key); return raw?JSON.parse(raw):[]; }catch(e){ return []; }" +
+        "}" +
+        "function saveStack(key, stack){" +
+          "try{ sessionStorage.setItem(key, JSON.stringify(stack.slice(-UNDO_STACK_CAP))); }catch(e){}" +
+        "}" +
+        "function parentOfPath(p){ var i=p.lastIndexOf('/'); return i===-1?'':p.substring(0,i); }" +
+        "function baseNameOfPath(p){ var i=p.lastIndexOf('/'); return i===-1?p:p.substring(i+1); }" +
+        // op = {action:'move'|'rename', items:[{path,destPath} or {path,newName}]}
+        "function runOp(op){" +
+          "return Promise.all(op.items.map(function(it){" +
+            "var params=Object.assign({action:op.action}, it);" +
+            "return postFileOp(new URLSearchParams(params));" +
+          "}));" +
+        "}" +
+        // Records a just-completed move/rename (undoOp reverses it, redoOp
+        // reapplies it), clears the redo history - a fresh action
+        // invalidates any pending redo, same as any editor - and queues the
+        // toast to appear once the page (about to be reloaded by the
+        // caller) finishes loading.
+        "function pushUndoEntry(message, undoOp, redoOp){" +
+          "var stack=loadStack(UNDO_STACK_KEY);" +
+          "stack.push({message:message, undoOp:undoOp, redoOp:redoOp});" +
+          "saveStack(UNDO_STACK_KEY, stack);" +
+          "saveStack(REDO_STACK_KEY, []);" +
+          "queueToast(message, 'undo');" +
+        "}" +
+        "function queueToast(message, mode){" +
+          "try{ sessionStorage.setItem(PENDING_TOAST_KEY, JSON.stringify({message:message, mode:mode})); }catch(e){}" +
+        "}" +
+        "function clickUndo(){" +
+          "var stack=loadStack(UNDO_STACK_KEY);" +
+          "var entry=stack.pop();" +
+          "if(!entry) return;" +
+          "runOp(entry.undoOp).then(function(results){" +
+            "var failed=results.filter(function(r){return !r.success;});" +
+            "if(failed.length){ alert('Could not undo: '+failed.map(function(r){return r.message;}).join('; ')); return; }" +
+            "saveStack(UNDO_STACK_KEY, stack);" +
+            "var redoStack=loadStack(REDO_STACK_KEY);" +
+            "redoStack.push(entry);" +
+            "saveStack(REDO_STACK_KEY, redoStack);" +
+            "queueToast('Undone', 'redo');" +
+            "location.reload();" +
+          "});" +
+        "}" +
+        "function clickRedo(){" +
+          "var stack=loadStack(REDO_STACK_KEY);" +
+          "var entry=stack.pop();" +
+          "if(!entry) return;" +
+          "runOp(entry.redoOp).then(function(results){" +
+            "var failed=results.filter(function(r){return !r.success;});" +
+            "if(failed.length){ alert('Could not redo: '+failed.map(function(r){return r.message;}).join('; ')); return; }" +
+            "saveStack(REDO_STACK_KEY, stack);" +
+            "var undoStack=loadStack(UNDO_STACK_KEY);" +
+            "undoStack.push(entry);" +
+            "saveStack(UNDO_STACK_KEY, undoStack);" +
+            "queueToast(entry.message, 'undo');" +
+            "location.reload();" +
+          "});" +
+        "}" +
+        "function showActionToast(message, mode){" +
+          "var toast=document.getElementById('actionToast');" +
+          "if(!toast) return;" +
+          "document.getElementById('actionToastMessage').textContent=message;" +
+          "var btn=document.getElementById('actionToastBtn');" +
+          "btn.textContent=mode==='undo'?'Undo':'Redo';" +
+          "btn.onclick=mode==='undo'?clickUndo:clickRedo;" +
+          "toast.classList.add('open');" +
+          "clearTimeout(window._actionToastTimer);" +
+          "window._actionToastTimer=setTimeout(function(){ toast.classList.remove('open'); }, 7000);" +
+        "}" +
+        "function hideActionToast(){" +
+          "var toast=document.getElementById('actionToast');" +
+          "if(toast) toast.classList.remove('open');" +
+          "clearTimeout(window._actionToastTimer);" +
+        "}" +
+        "(function(){" +
+          "var pending;" +
+          "try{ var raw=sessionStorage.getItem(PENDING_TOAST_KEY); pending=raw?JSON.parse(raw):null; }catch(e){ pending=null; }" +
+          "if(pending){ sessionStorage.removeItem(PENDING_TOAST_KEY); showActionToast(pending.message, pending.mode); }" +
+        "})();" +
+        "document.addEventListener('keydown', function(e){" +
+          "var tag=document.activeElement?document.activeElement.tagName:'';" +
+          "if(tag==='INPUT'||tag==='TEXTAREA') return;" +
+          "if((e.ctrlKey||e.metaKey) && !e.shiftKey && e.key.toLowerCase()==='z'){ e.preventDefault(); clickUndo(); }" +
+          "else if((e.ctrlKey||e.metaKey) && (e.key.toLowerCase()==='y' || (e.shiftKey && e.key.toLowerCase()==='z'))){ e.preventDefault(); clickRedo(); }" +
+        "});" +
+
         // ---- Rename / duplicate / delete / new folder ----
         "function postFileOp(params){" +
           "return fetch('/fileops',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()})" +
@@ -464,7 +573,12 @@ public class PageScripts {
           "var newName=prompt('Rename to:', currentName);" +
           "if(!newName||newName===currentName) return;" +
           "postFileOp(new URLSearchParams({action:'rename',path:path,newName:newName})).then(function(res){" +
-            "if(res.success){ location.reload(); } else { alert('Rename failed: '+res.message); }" +
+            "if(!res.success){ alert('Rename failed: '+res.message); return; }" +
+            "var newPath=res.newPath||(parentOfPath(path)?parentOfPath(path)+'/'+newName:newName);" +
+            "pushUndoEntry('Renamed to \"'+newName+'\"'," +
+              "{action:'rename', items:[{path:newPath, newName:currentName}]}," +
+              "{action:'rename', items:[{path:path, newName:newName}]});" +
+            "location.reload();" +
           "});" +
         "}" +
         "function duplicateItem(path){" +
@@ -476,6 +590,27 @@ public class PageScripts {
           "if(!confirm('Move \"'+name+'\" to the recycle bin?')) return;" +
           "postFileOp(new URLSearchParams({action:'delete',path:path})).then(function(res){" +
             "if(res.success){ location.reload(); } else { alert('Delete failed: '+res.message); }" +
+          "});" +
+        "}" +
+        // Asks the server to shell out to the OS's native file manager
+        // (Explorer/Finder/xdg-open) for this item - only meaningful
+        // because the app and browser are running on the same machine.
+        "function revealInFileManager(path){" +
+          "fetch('/reveal',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({path:path}).toString()})" +
+          ".then(function(r){return r.json();})" +
+          ".then(function(res){ if(!res.success){ alert('Could not open file manager: '+res.message); } });" +
+        "}" +
+        // Copies the item's real, absolute filesystem path (not the app's
+        // own ROOT_DIR-relative one) so it's paste-able straight into a
+        // terminal or another app.
+        "function copyPathToClipboard(path){" +
+          "fetch('/abspath?path='+encodeURIComponent(path))" +
+          ".then(function(r){return r.json();})" +
+          ".then(function(res){" +
+            "if(!res.success){ alert('Could not get path: '+res.message); return; }" +
+            "if(navigator.clipboard && navigator.clipboard.writeText){" +
+              "navigator.clipboard.writeText(res.path).catch(function(){ window.prompt('Copy this path:', res.path); });" +
+            "}else{ window.prompt('Copy this path:', res.path); }" +
           "});" +
         "}" +
         "function deleteSelection(){" +
@@ -531,11 +666,22 @@ public class PageScripts {
         "function confirmMoveHere(){" +
           "var dest=moveCurrentPath;" +
           "if(moveTargetPaths.indexOf(dest)!==-1){ alert(\"That's the folder being moved - pick a different destination.\"); return; }" +
-          "Promise.all(moveTargetPaths.map(function(p){" +
-            "return postFileOp(new URLSearchParams({action:'move',path:p,destPath:dest}));" +
-          "})).then(function(results){" +
-            "var failed=results.filter(function(r){return !r.success;});" +
-            "if(failed.length){ alert('Some items could not be moved: '+failed.map(function(r){return r.message;}).join('; ')); }" +
+          "var paths=moveTargetPaths.slice();" +
+          "Promise.all(paths.map(function(p){" +
+            "return postFileOp(new URLSearchParams({action:'move',path:p,destPath:dest})).then(function(res){ return {path:p, res:res}; });" +
+          "})).then(function(outcomes){" +
+            "var failed=outcomes.filter(function(o){return !o.res.success;});" +
+            "var succeeded=outcomes.filter(function(o){return o.res.success;});" +
+            "if(failed.length){ alert('Some items could not be moved: '+failed.map(function(o){return o.res.message;}).join('; ')); }" +
+            "if(succeeded.length){" +
+              "var undoItems=succeeded.map(function(o){" +
+                "var newPath=o.res.newPath||(dest?dest+'/'+baseNameOfPath(o.path):baseNameOfPath(o.path));" +
+                "return {path:newPath, destPath:parentOfPath(o.path)};" +
+              "});" +
+              "var redoItems=succeeded.map(function(o){ return {path:o.path, destPath:dest}; });" +
+              "var message=succeeded.length===1?('Moved \"'+baseNameOfPath(succeeded[0].path)+'\"'):('Moved '+succeeded.length+' items');" +
+              "pushUndoEntry(message, {action:'move', items:undoItems}, {action:'move', items:redoItems});" +
+            "}" +
             "closeMoveModal(); location.reload();" +
           "});" +
         "}" +

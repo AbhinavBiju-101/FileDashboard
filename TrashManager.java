@@ -10,6 +10,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 /**
@@ -37,6 +40,47 @@ public class TrashManager {
 
     static {
         load();
+        startAutoPurgeScheduler();
+    }
+
+    // Checks for and permanently removes anything past Config.TRASH_
+    // RETENTION_DAYS on an hourly timer - hourly granularity is plenty
+    // since the badge itself only shows whole days remaining. Runs once
+    // immediately at startup too, in case the server was off long enough
+    // for something to have already expired. No-ops entirely when
+    // TRASH_RETENTION_DAYS is 0 or less.
+    private static void startAutoPurgeScheduler() {
+        if (Config.TRASH_RETENTION_DAYS <= 0) return;
+        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "trash-auto-purge");
+            t.setDaemon(true);
+            return t;
+        });
+        scheduler.scheduleWithFixedDelay(TrashManager::purgeExpired, 0, 1, TimeUnit.HOURS);
+    }
+
+    /** Permanently deletes every trash entry past the retention window. Safe to call anytime. */
+    public static synchronized void purgeExpired() {
+        if (Config.TRASH_RETENTION_DAYS <= 0) return;
+        long cutoff = System.currentTimeMillis() - Config.TRASH_RETENTION_DAYS * 24L * 60 * 60 * 1000;
+        for (Entry e : new ArrayList<>(entries.values())) {
+            if (e.deletedTime <= cutoff) {
+                try {
+                    permanentlyDelete(e.id);
+                } catch (IOException ex) {
+                    System.err.println("Warning: auto-purge failed for \"" + e.originalName + "\": " + ex.getMessage());
+                }
+            }
+        }
+    }
+
+    // Milliseconds until this entry is auto-purged (negative once it's
+    // overdue but hasn't been swept yet); -1 if auto-purge is disabled.
+    // Used to render the countdown badge on trash cards.
+    public static long millisUntilPurge(Entry e) {
+        if (Config.TRASH_RETENTION_DAYS <= 0) return -1;
+        long deadline = e.deletedTime + Config.TRASH_RETENTION_DAYS * 24L * 60 * 60 * 1000;
+        return deadline - System.currentTimeMillis();
     }
 
     /** Moves a file/folder into the trash. relPath is relative to ROOT_DIR. */

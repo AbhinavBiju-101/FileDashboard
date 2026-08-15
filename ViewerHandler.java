@@ -69,7 +69,10 @@ public class ViewerHandler implements HttpHandler {
             return;
         }
 
-        if (!isTrash) RecentActivity.recordView(relPath);
+        if (!isTrash) {
+            RecentActivity.recordView(relPath);
+            ActivityLog.record(relPath, "viewed");
+        }
 
         String ext = GridRenderer.getExtension(file.getName()).toLowerCase();
         String html;
@@ -92,6 +95,11 @@ public class ViewerHandler implements HttpHandler {
         String[] neighbors = findNeighbors(file, relPath, ext);
         String prevPath = neighbors[0];
         String nextPath = neighbors[1];
+        // Anything the viewer can already read as text, it can also edit -
+        // markdown/code/plain text - via the textarea+/save-text pairing
+        // below. Deliberately not offered on the trash-browsing counterpart
+        // (buildTrashPage never sets this), so trashed items stay read-only.
+        boolean editable = ViewabilityUtil.isTextLike(file, ext);
 
         StringBuilder sb = new StringBuilder();
         sb.append("<!DOCTYPE html><html><head><meta charset='UTF-8'>");
@@ -101,7 +109,16 @@ public class ViewerHandler implements HttpHandler {
         if (CodeLanguageUtil.shouldHighlight(ext) && !ext.equals("md")) {
             sb.append(PageScripts.CODE_HIGHLIGHT_RESOURCES);
         }
-        sb.append("</head><body class='viewer-body'>");
+        sb.append("</head><body class='viewer-body'");
+        if (editable) {
+            // Handed to the client via a data attribute (HTML-escaped like
+            // any other attribute) rather than embedded as a JS string
+            // literal, so filenames with quotes/backslashes can't break out
+            // of an inline <script> - same pattern the folder-context-menu
+            // grid already uses for data-current-path.
+            sb.append(" data-edit-path=\"").append(PathUtil.htmlEscape(relPath)).append("\"");
+        }
+        sb.append(">");
 
         sb.append("<div class='viewer-topbar'>");
         sb.append("<span class='viewer-filename'>").append(PathUtil.htmlEscape(file.getName())).append("</span>");
@@ -109,8 +126,11 @@ public class ViewerHandler implements HttpHandler {
         if (prevPath != null) {
             sb.append("<a href='/viewer?path=").append(PathUtil.urlEncode(prevPath)).append("'>&larr; Previous</a>");
         }
+        if (editable) {
+            sb.append("<a href=\"#\" onclick=\"toggleEditMode(); return false;\" id='editToggleBtn'>Edit</a>");
+        }
         sb.append("<a href='/file?path=").append(PathUtil.urlEncode(relPath)).append("&mode=download'>Download</a>");
-        if (ViewabilityUtil.isTextLike(file, ext) && !ext.equals("md") && CodeLanguageUtil.shouldHighlight(ext)) {
+        if (editable && !ext.equals("md") && CodeLanguageUtil.shouldHighlight(ext)) {
             sb.append("<a href=\"#\" onclick=\"toggleCodeView(); return false;\" id='toggleRawBtn'>Show raw text</a>");
         }
         if (nextPath != null) {
@@ -120,13 +140,14 @@ public class ViewerHandler implements HttpHandler {
         String prevHref = prevPath == null ? null : "/viewer?path=" + PathUtil.urlEncode(prevPath);
         String nextHref = nextPath == null ? null : "/viewer?path=" + PathUtil.urlEncode(nextPath);
 
-        sb.append("<div class='viewer-content'>");
+        sb.append("<div class='viewer-content' id='viewerContent'>");
         if (ext.equals("pdf")) {
             sb.append("<iframe class='viewer-pdf-frame' src='/file?path=")
               .append(PathUtil.urlEncode(relPath)).append("&mode=view'></iframe>");
-        } else if (ViewabilityUtil.isTextLike(file, ext)) {
+        } else if (editable) {
             String content = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
             String escaped = PathUtil.htmlEscape(content);
+            sb.append("<div id='readView'>");
             if (ext.equals("md")) {
                 sb.append("<div class='viewer-reading markdown-body'>").append(MarkdownLite.render(content)).append("</div>");
             } else if (CodeLanguageUtil.shouldHighlight(ext)) {
@@ -139,11 +160,26 @@ public class ViewerHandler implements HttpHandler {
             } else {
                 sb.append("<pre class='viewer-reading plain-text'>").append(escaped).append("</pre>");
             }
+            sb.append("</div>");
+            // Populated from the same escaped text as the read view above -
+            // a <textarea>'s content is parsed as HTML text, so ordinary
+            // HTML-entity escaping round-trips it back to the exact
+            // original characters when the browser reads .value.
+            sb.append("<textarea id='editArea' class='viewer-edit-area' style='display:none;' spellcheck='false'>")
+              .append(escaped).append("</textarea>");
         } else {
             sb.append("<div class='viewer-unsupported'><p>This file type doesn't have a dedicated reading view.</p>")
               .append("<p><a href='/file?path=").append(PathUtil.urlEncode(relPath)).append("&mode=download'>Download it instead</a></p></div>");
         }
         sb.append("</div>");
+
+        if (editable) {
+            sb.append("<div id='saveBar' class='viewer-save-bar' style='display:none;'>")
+              .append("<button id='saveBtn' class='viewer-save-btn' onclick='saveEdit()'>Save</button>")
+              .append("<a href=\"#\" onclick=\"cancelEdit(); return false;\">Cancel</a>")
+              .append("<span id='saveStatus' class='viewer-save-status'></span>")
+              .append("</div>");
+        }
 
         sb.append(viewerScript(prevHref, nextHref));
         sb.append("</body></html>");
@@ -277,6 +313,17 @@ public class ViewerHandler implements HttpHandler {
             ".markdown-body code{background:#f4f5f7;padding:2px 5px;border-radius:4px;font-family:Menlo,Consolas,monospace;font-size:0.9em;}" +
             ".markdown-body ul{padding-left:24px;}" +
             ".viewer-unsupported{padding:60px;text-align:center;color:#666;}" +
+            ".viewer-edit-area{width:100%;height:100%;min-height:60vh;border:none;resize:none;outline:none;" +
+              "padding:24px 40px;box-sizing:border-box;font-family:Menlo,Consolas,monospace;font-size:14px;line-height:1.6;}" +
+            ".viewer-save-bar{display:flex;align-items:center;gap:12px;padding:10px 18px;" +
+              "border-top:1px solid #e2e4e8;background:#fafafa;font-size:13px;flex-shrink:0;}" +
+            ".viewer-save-btn{background:#2563eb;color:#fff;border:none;padding:6px 16px;border-radius:6px;" +
+              "cursor:pointer;font-size:13px;}" +
+            ".viewer-save-btn:hover{background:#1d4ed8;}" +
+            ".viewer-save-btn:disabled{background:#9ca3af;cursor:default;}" +
+            ".viewer-save-bar a{color:#555;text-decoration:none;}" +
+            ".viewer-save-bar a:hover{text-decoration:underline;}" +
+            ".viewer-save-status{color:#888;}" +
             "</style>";
     }
 
@@ -289,6 +336,13 @@ public class ViewerHandler implements HttpHandler {
         return "<script>" +
             "var VIEWER_PREV=" + prevJs + ", VIEWER_NEXT=" + nextJs + ";" +
             "document.addEventListener('keydown', function(e){" +
+              // While actively editing, arrow keys need to move the text
+              // cursor, not flip to the previous/next file - only Ctrl/Cmd+S
+              // (save) is intercepted here.
+              "if(document.activeElement && document.activeElement.id==='editArea'){" +
+                "if((e.ctrlKey||e.metaKey) && e.key==='s'){ e.preventDefault(); saveEdit(); }" +
+                "return;" +
+              "}" +
               "if(e.key==='ArrowLeft' && VIEWER_PREV){ location.href=VIEWER_PREV; }" +
               "else if(e.key==='ArrowRight' && VIEWER_NEXT){ location.href=VIEWER_NEXT; }" +
             "});" +
@@ -299,6 +353,52 @@ public class ViewerHandler implements HttpHandler {
               "var showingRaw=r.style.display!=='none';" +
               "if(showingRaw){ r.style.display='none'; h.style.display=''; b.textContent='Show raw text'; }" +
               "else{ r.style.display=''; h.style.display='none'; b.textContent='Show formatted'; }" +
+            "}" +
+            // ---- Lightweight edit mode (text/markdown/code files only -
+            // see buildPage's "editable" check; buildTrashPage never sets
+            // data-edit-path, so these all safely no-op for trashed items) ----
+            "function toggleEditMode(){" +
+              "var editPath=document.body.dataset.editPath;" +
+              "if(!editPath) return;" +
+              "var editArea=document.getElementById('editArea');" +
+              "if(!editArea) return;" +
+              "if(editArea.style.display!=='none'){ cancelEdit(); return; }" +
+              "var readView=document.getElementById('readView'), saveBar=document.getElementById('saveBar'), btn=document.getElementById('editToggleBtn');" +
+              "if(readView) readView.style.display='none';" +
+              "editArea.style.display='block';" +
+              "if(saveBar) saveBar.style.display='flex';" +
+              "if(btn) btn.textContent='View';" +
+              "editArea.focus();" +
+            "}" +
+            "function cancelEdit(){" +
+              "var readView=document.getElementById('readView'), editArea=document.getElementById('editArea'), saveBar=document.getElementById('saveBar'), btn=document.getElementById('editToggleBtn');" +
+              "if(!readView||!editArea) return;" +
+              "editArea.style.display='none';" +
+              "readView.style.display='';" +
+              "if(saveBar) saveBar.style.display='none';" +
+              "if(btn) btn.textContent='Edit';" +
+              "var status=document.getElementById('saveStatus'); if(status) status.textContent='';" +
+            "}" +
+            "function saveEdit(){" +
+              "var editPath=document.body.dataset.editPath;" +
+              "var editArea=document.getElementById('editArea');" +
+              "var btn=document.getElementById('saveBtn');" +
+              "var status=document.getElementById('saveStatus');" +
+              "if(!editPath||!editArea) return;" +
+              "btn.disabled=true;" +
+              "if(status) status.textContent='Saving...';" +
+              "fetch('/save-text',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'}," +
+                "body:new URLSearchParams({path:editPath, content:editArea.value}).toString()})" +
+                ".then(function(r){return r.json();})" +
+                ".then(function(res){" +
+                  "btn.disabled=false;" +
+                  // Reload rather than patch the DOM in place - simplest way
+                  // to get markdown re-rendered / code re-highlighted from
+                  // the freshly-saved content.
+                  "if(res.success){ location.reload(); }" +
+                  "else if(status){ status.textContent='Save failed: '+res.message; }" +
+                "})" +
+                ".catch(function(){ btn.disabled=false; if(status) status.textContent='Save failed - network error.'; });" +
             "}" +
             "</script>";
     }

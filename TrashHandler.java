@@ -43,7 +43,11 @@ public class TrashHandler implements HttpHandler {
 
         sb.append("<div class='topbar'>");
         sb.append("<a class='brand-link' href='/dashboard' onclick=\"if(parent&&parent.navigateCurrentTab){ parent.navigateCurrentTab('/dashboard'); return false; }\"><h1>File Dashboard</h1></a>");
-        sb.append("<div class='breadcrumb'>Recycle Bin - ").append(items.size()).append(" item").append(items.size() == 1 ? "" : "s").append("</div>");
+        sb.append("<div class='breadcrumb'>Recycle Bin - ").append(items.size()).append(" item").append(items.size() == 1 ? "" : "s");
+        if (Config.TRASH_RETENTION_DAYS > 0) {
+            sb.append(" &middot; items are removed automatically after ").append(Config.TRASH_RETENTION_DAYS).append(" days");
+        }
+        sb.append("</div>");
         if (!items.isEmpty()) {
             sb.append("<div class='toolbar'><a href=\"#\" data-action=\"empty-trash\" class='toolbar-action'>Empty trash</a></div>");
         }
@@ -101,7 +105,38 @@ public class TrashHandler implements HttpHandler {
         }
         sb.append("<div class=\"meta path\">From: ").append(PathUtil.htmlEscape(location)).append("</div>");
         sb.append("<div class=\"meta\">Deleted ").append(fmt.format(new Date(e.deletedTime))).append("</div>");
+        String expiryBadge = expiryBadge(e);
+        if (expiryBadge != null) {
+            sb.append(expiryBadge);
+        }
         sb.append("</div>");
         return sb.toString();
+    }
+
+    // A small countdown ("23 days left" / "Expires today" / "Expired") so
+    // it's clear an item won't sit in the recycle bin forever - reuses the
+    // same deletedTime the manifest already tracks, via TrashManager's
+    // Config.TRASH_RETENTION_DAYS math. Returns null (renders nothing) when
+    // auto-purge is turned off.
+    private String expiryBadge(TrashManager.Entry e) {
+        long remainingMs = TrashManager.millisUntilPurge(e);
+        if (remainingMs == -1) return null;
+
+        long daysLeft = (long) Math.ceil(remainingMs / 86400000.0);
+        String text;
+        String cssClass = "meta trash-expiry";
+        if (daysLeft <= 0) {
+            text = "Expired - will be removed shortly";
+            cssClass += " urgent";
+        } else if (daysLeft == 1) {
+            text = "Expires tomorrow";
+            cssClass += " urgent";
+        } else if (daysLeft <= 3) {
+            text = "Expires in " + daysLeft + " days";
+            cssClass += " urgent";
+        } else {
+            text = daysLeft + " days left";
+        }
+        return "<div class=\"" + cssClass + "\">" + text + "</div>";
     }
 }

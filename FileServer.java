@@ -73,6 +73,9 @@ public class FileServer {
         addContext(server, "/trash-browse", new TrashBrowseHandler());
         addContext(server, "/trash-file", new TrashFileHandler());
         addContext(server, "/viewer", new ViewerHandler());
+        addContext(server, "/save-text", new SaveTextHandler());
+        addContext(server, "/reveal", new RevealHandler());
+        addContext(server, "/abspath", new AbsPathHandler());
         addContext(server, "/quickstart", new QuickstartHandler());
         addContext(server, "/settings", new SettingsHandler());
         addContext(server, "/subfolders", new SubfoldersHandler());

@@ -57,6 +57,8 @@ public class UploadHandler implements HttpHandler {
         try (FileOutputStream fos = new FileOutputStream(outFile)) {
             fos.write(part.data);
         }
+        String outRelPath = PathUtil.relativeToRoot(outFile);
+        ActivityLog.record(outRelPath, "uploaded");
 
         exchange.getResponseHeaders().set("Location", "/browse?path=" + PathUtil.urlEncode(relPath));
         exchange.sendResponseHeaders(303, -1);

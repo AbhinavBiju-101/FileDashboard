@@ -101,6 +101,10 @@ public class ShellScript {
             "shellDragTabId=null;" +
             "shellSyncTabOrderFromDom();" +
           "});" +
+          "btn.addEventListener('contextmenu', function(e){" +
+            "e.preventDefault();" +
+            "showTabContextMenu(e.clientX, e.clientY, id);" +
+          "});" +
 
           "var iframe=document.createElement('iframe');" +
           "iframe.id=id+'-frame'; iframe.src=url;" +
@@ -170,6 +174,53 @@ public class ShellScript {
           "}" +
           "shellSaveState();" +
         "}" +
+
+        // ---- Tab context menu (right-click a tab) - just "Duplicate" for
+        // now, reusing the same .context-menu/.context-menu-item styling
+        // PageScripts.js uses for file/folder cards, since this shell page
+        // (unlike the tabs' own iframe content) doesn't load PageScripts.js
+        // itself and needs its own small copy of the show/hide/position
+        // logic. ----
+        "function shellMenuItem(label, action){ return '<div class=\"context-menu-item\" data-menu-action=\"'+action+'\">'+label+'</div>'; }" +
+        "function showTabContextMenu(x, y, tabId){" +
+          "var menu=document.getElementById('tabContextMenu');" +
+          "if(!menu) return;" +
+          "menu.innerHTML=shellMenuItem('Duplicate','duplicate-tab');" +
+          "menu.dataset.tabId=tabId;" +
+          "menu.classList.add('open');" +
+          "var maxX=window.innerWidth-menu.offsetWidth-8, maxY=window.innerHeight-menu.offsetHeight-8;" +
+          "menu.style.left=Math.min(x,maxX)+'px';" +
+          "menu.style.top=Math.min(y,maxY)+'px';" +
+        "}" +
+        "function hideTabContextMenu(){" +
+          "var menu=document.getElementById('tabContextMenu');" +
+          "if(menu) menu.classList.remove('open');" +
+        "}" +
+        // Opens a brand-new tab pointed at the same URL - the shared
+        // "already-open URL just gets focused" shortcut inside openTab()
+        // is deliberately bypassed here (a straight openTab() call would
+        // just refocus the original instead of duplicating it), since
+        // duplicating is the whole point of this menu item.
+        "function duplicateTab(tabId){" +
+          "var tabObj=shellTabs.find(function(t){ return t.id===tabId; });" +
+          "if(!tabObj) return;" +
+          "var id='tab-'+(++shellTabCounter);" +
+          "shellTabs.push({id:id, url:tabObj.url, title:tabObj.title});" +
+          "shellCreateTabElement(id, tabObj.url, tabObj.title);" +
+          "shellSetActiveTab(id);" +
+          "shellSaveState();" +
+        "}" +
+        "document.addEventListener('click', function(e){" +
+          "var item=e.target.closest('#tabContextMenu .context-menu-item');" +
+          "if(item){" +
+            "var menu=document.getElementById('tabContextMenu');" +
+            "if(item.dataset.menuAction==='duplicate-tab'){ duplicateTab(menu.dataset.tabId); }" +
+            "hideTabContextMenu();" +
+            "return;" +
+          "}" +
+          "if(!e.target.closest('#tabContextMenu')) hideTabContextMenu();" +
+        "});" +
+        "window.addEventListener('blur', hideTabContextMenu);" +
 
         // ---- Address bar (press "/" to open, type/click to browse, Enter to go) ----
         "function openAddressBar(){" +
@@ -257,6 +308,7 @@ public class ShellScript {
         "}" +
 
         "document.addEventListener('keydown', function(e){" +
+          "if(e.key==='Escape'){ hideTabContextMenu(); }" +
           "if(e.key==='/' && document.activeElement.tagName!=='INPUT' && document.activeElement.tagName!=='TEXTAREA'){" +
             "e.preventDefault();" +
             "openAddressBar();" +

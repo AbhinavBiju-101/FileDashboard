@@ -59,6 +59,8 @@ public class Styles {
         ".search-inline input[type=text]{padding:6px 8px;border:1px solid #c7cbd1;border-radius:6px;font-size:13px;}" +
         ".search-inline button{padding:6px 10px;border:none;background:#e5e7eb;border-radius:6px;cursor:pointer;font-size:13px;}" +
         ".meta.path{color:#999;font-size:10px;word-break:break-word;}" +
+        ".trash-expiry{color:#888;}" +
+        ".trash-expiry.urgent{color:#c2410c;font-weight:600;}" +
         // Sidebar
         ".sidebar{position:fixed;top:0;left:0;bottom:0;width:190px;background:#1f2328;overflow-y:auto;" +
           "transition:width .15s;z-index:100;padding-top:52px;}" +
@@ -151,5 +153,57 @@ public class Styles {
         ".chip{padding:5px 12px;border-radius:14px;background:#eef0f2;color:#555;font-size:12px;cursor:pointer;}" +
         ".chip:hover{background:#e0e3e7;}" +
         ".chip.active{background:#2563eb;color:#fff;}" +
+        // Undo/redo action toast (move & rename)
+        ".action-toast{display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);" +
+          "background:#1f2328;color:#fff;padding:10px 10px 10px 18px;border-radius:8px;align-items:center;" +
+          "gap:14px;font-size:13px;z-index:2500;box-shadow:0 6px 20px rgba(0,0,0,.25);}" +
+        ".action-toast.open{display:flex;}" +
+        ".action-toast-btn{background:none;border:none;color:#7db2ff;cursor:pointer;font-size:13px;" +
+          "font-weight:600;padding:0;}" +
+        ".action-toast-btn:hover{text-decoration:underline;}" +
+        ".action-toast-close{background:none;border:none;color:#9aa1ab;cursor:pointer;font-size:16px;" +
+          "line-height:1;padding:0;}" +
+        // "On this day" / past-week timeline (dashboard home)
+        ".timeline-section{padding:0 24px 8px;}" +
+        ".timeline-list{display:flex;flex-direction:column;gap:2px;}" +
+        ".timeline-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;" +
+          "text-decoration:none;color:inherit;cursor:pointer;}" +
+        ".timeline-row:hover{background:#fff;}" +
+        ".timeline-icon{font-size:18px;flex-shrink:0;width:22px;text-align:center;}" +
+        ".timeline-name{font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}" +
+        ".timeline-meta{font-size:11px;color:#999;flex-shrink:0;}" +
+        ".timeline-year{font-size:11px;color:#2563eb;font-weight:600;flex-shrink:0;background:#eef2ff;" +
+          "padding:2px 8px;border-radius:10px;}" +
+        // ---- "This week" stats chart ----
+        // A small stacked bar chart (viewed/downloaded/uploaded, one bar per
+        // of the last 7 days) that doubles as a filter for the file-card row
+        // beneath it - clicking a day narrows the row to that day's cards,
+        // clicking again (or "All days") clears the filter. Deliberately
+        // plain divs/CSS rather than a charting library, consistent with
+        // the rest of the app having no external JS dependencies besides
+        // the one already-present highlight.js CDN include.
+        ".week-wrap{padding:4px 24px 8px;}" +
+        ".week-summary{font-size:13px;color:#666;margin-bottom:14px;}" +
+        ".week-summary strong{color:#1f2328;}" +
+        ".week-chart{display:flex;align-items:flex-end;gap:10px;height:110px;padding:0 2px 8px;border-bottom:1px solid #e2e4e8;}" +
+        ".week-bar-col{display:flex;flex-direction:column;align-items:center;flex:1;cursor:pointer;height:100%;justify-content:flex-end;border-radius:6px;padding-top:4px;}" +
+        ".week-bar-col:hover{background:#eef2ff;}" +
+        ".week-bar-col.active{background:#e0e9ff;}" +
+        ".week-bar-col.empty{cursor:default;}" +
+        ".week-bar-col.empty:hover{background:none;}" +
+        ".week-bar{width:22px;display:flex;flex-direction:column-reverse;border-radius:4px 4px 0 0;overflow:hidden;min-height:2px;}" +
+        ".week-seg-viewed{background:#2563eb;}" +
+        ".week-seg-downloaded{background:#16a34a;}" +
+        ".week-seg-uploaded{background:#d97706;}" +
+        ".week-bar-count{font-size:11px;color:#999;margin-top:4px;height:14px;}" +
+        ".week-bar-col.active .week-bar-count{color:#2563eb;font-weight:600;}" +
+        ".week-day-label{font-size:12px;color:#555;margin-top:6px;}" +
+        ".week-bar-col.active .week-day-label{color:#2563eb;font-weight:600;}" +
+        ".week-legend{display:flex;gap:16px;margin:12px 2px 0;font-size:12px;color:#666;align-items:center;}" +
+        ".week-legend-item{display:flex;align-items:center;gap:6px;}" +
+        ".week-legend-dot{width:9px;height:9px;border-radius:50%;display:inline-block;}" +
+        ".week-clear-filter{margin-left:auto;color:#2563eb;text-decoration:none;font-size:12px;display:none;}" +
+        ".week-clear-filter.visible{display:inline;}" +
+        ".week-cards{margin-top:14px;}" +
         "</style>";
 }

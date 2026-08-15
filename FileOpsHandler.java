@@ -39,10 +39,10 @@ public class FileOpsHandler implements HttpHandler {
         relPath = relPath == null ? "" : relPath;
 
         try {
-            String result;
+            OpResult result;
             if ("create-folder".equals(action)) {
-                result = handleCreateFolder(relPath, newName);
-                respondJson(exchange, true, result);
+                result = new OpResult(handleCreateFolder(relPath, newName), null);
+                respondJson(exchange, true, result.message, result.newPath);
                 return;
             }
 
@@ -73,10 +73,10 @@ public class FileOpsHandler implements HttpHandler {
                     result = handleRename(target, relPath, newName);
                     break;
                 case "duplicate":
-                    result = handleDuplicate(target);
+                    result = new OpResult(handleDuplicate(target), null);
                     break;
                 case "delete":
-                    result = handleDelete(target, relPath);
+                    result = new OpResult(handleDelete(target, relPath), null);
                     break;
                 case "move":
                     result = handleMove(target, relPath, destPath);
@@ -85,9 +85,22 @@ public class FileOpsHandler implements HttpHandler {
                     respondJson(exchange, false, "Unknown action.");
                     return;
             }
-            respondJson(exchange, true, result);
+            respondJson(exchange, true, result.message, result.newPath);
         } catch (IOException e) {
             respondJson(exchange, false, e.getMessage());
+        }
+    }
+
+    // newPath is only meaningful for rename/move - it's how the client
+    // builds an "Undo" toast without having to duplicate this handler's
+    // path-joining logic: it just remembers where the item ended up, and
+    // can reverse the same rename/move call to put it back.
+    private static class OpResult {
+        final String message;
+        final String newPath;
+        OpResult(String message, String newPath) {
+            this.message = message;
+            this.newPath = newPath;
         }
     }
 
@@ -108,7 +121,7 @@ public class FileOpsHandler implements HttpHandler {
         return "Created " + sanitized;
     }
 
-    private String handleRename(File target, String relPath, String newName) throws IOException {
+    private OpResult handleRename(File target, String relPath, String newName) throws IOException {
         if (newName == null) newName = "";
         newName = newName.trim();
         String sanitized = new File(newName).getName();
@@ -121,7 +134,7 @@ public class FileOpsHandler implements HttpHandler {
 
         Files.move(target.toPath(), dest.toPath());
         RecentActivity.forgetPath(relPath);
-        return "Renamed to " + sanitized;
+        return new OpResult("Renamed to " + sanitized, PathUtil.relativeToRoot(dest));
     }
 
     private String handleDuplicate(File target) throws IOException {
@@ -144,7 +157,7 @@ public class FileOpsHandler implements HttpHandler {
         return "Moved \"" + name + "\" to the recycle bin";
     }
 
-    private String handleMove(File target, String relPath, String destRelPath) throws IOException {
+    private OpResult handleMove(File target, String relPath, String destRelPath) throws IOException {
         if (destRelPath == null) destRelPath = "";
         File destDir;
         try {
@@ -171,7 +184,7 @@ public class FileOpsHandler implements HttpHandler {
 
         Files.move(target.toPath(), dest.toPath());
         RecentActivity.forgetPath(relPath);
-        return "Moved " + target.getName();
+        return new OpResult("Moved " + target.getName(), PathUtil.relativeToRoot(dest));
     }
 
     private String generateCopyName(File parent, String originalName) {
@@ -235,8 +248,17 @@ public class FileOpsHandler implements HttpHandler {
     }
 
     private void respondJson(HttpExchange exchange, boolean success, String message) throws IOException {
-        String json = "{\"success\": " + success + ", \"message\": \"" + MiniJson.escape(message == null ? "" : message) + "\"}";
-        byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
+        respondJson(exchange, success, message, null);
+    }
+
+    private void respondJson(HttpExchange exchange, boolean success, String message, String newPath) throws IOException {
+        StringBuilder json = new StringBuilder("{\"success\": ").append(success)
+            .append(", \"message\": \"").append(MiniJson.escape(message == null ? "" : message)).append("\"");
+        if (newPath != null) {
+            json.append(", \"newPath\": \"").append(MiniJson.escape(newPath)).append("\"");
+        }
+        json.append("}");
+        byte[] bytes = json.toString().getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
         exchange.sendResponseHeaders(200, bytes.length);
         try (OutputStream os = exchange.getResponseBody()) {

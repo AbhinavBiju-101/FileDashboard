@@ -28,6 +28,18 @@ public class GridRenderer {
     // (used by search results and the recycle bin, where items come from
     // many different folders).
     public static String fileCard(File f, String childRel, boolean showFolderPath, String folderLabel) {
+        return fileCard(f, childRel, showFolderPath, folderLabel, null, null);
+    }
+
+    // Same card, with two optional extras: extraMetaLine adds a second meta
+    // row below the file size (e.g. "Downloaded \u00b7 3:25 PM"), and
+    // extraDataAttrs is raw " data-foo=\"bar\"" HTML inserted into the card's
+    // opening tag (e.g. so a caller can filter/group cards client-side by
+    // something the card wouldn't otherwise carry, like which day an
+    // activity happened on). Both null for the plain card - see the 4-arg
+    // overload above, used everywhere that doesn't need this.
+    public static String fileCard(File f, String childRel, boolean showFolderPath, String folderLabel,
+                                   String extraMetaLine, String extraDataAttrs) {
         String ext = getExtension(f.getName()).toLowerCase();
         boolean isImage = ext.matches("jpg|jpeg|png|gif|bmp|webp");
         String name = PathUtil.htmlEscape(f.getName());
@@ -43,7 +55,11 @@ public class GridRenderer {
           .append("\" data-type=\"file\" data-ext=\"").append(ext)
           .append("\" data-viewable=\"").append(viewable ? "1" : "0")
           .append("\" data-textlike=\"").append(textlike ? "1" : "0")
-          .append("\" data-category=\"").append(category).append("\">");
+          .append("\" data-category=\"").append(category).append("\"");
+        if (extraDataAttrs != null) {
+            sb.append(" ").append(extraDataAttrs);
+        }
+        sb.append(">");
 
         if (isImage) {
             sb.append("<img class=\"thumb\" src=\"/thumbnail?path=").append(encoded)
@@ -56,6 +72,9 @@ public class GridRenderer {
             sb.append("<div class=\"meta path\">").append(PathUtil.htmlEscape(folderLabel)).append("</div>");
         }
         sb.append("<div class=\"meta\">").append(humanSize(f.length())).append("</div>");
+        if (extraMetaLine != null) {
+            sb.append("<div class=\"meta\">").append(extraMetaLine).append("</div>");
+        }
         sb.append("</div>");
         return sb.toString();
     }

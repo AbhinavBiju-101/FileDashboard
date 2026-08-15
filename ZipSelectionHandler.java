@@ -45,6 +45,20 @@ public class ZipSelectionHandler implements HttpHandler {
                 }
                 if (!item.exists() || HiddenFileUtil.isHiddenName(item.getName())) continue;
 
+                // Record the download - previously missing entirely for zip
+                // downloads, which is why "Recently downloaded" (and the
+                // Dashboard's live-refresh poll, which is driven by these
+                // same version counters) never reacted to a zip-selection
+                // download. A selected file gets a proper entry, same as a
+                // single-file download via FileViewHandler; a selected
+                // folder has no single "file" to add to RecentActivity's
+                // file-card list, so it only goes into the ActivityLog
+                // timeline (see ZipDownloadHandler for the same trade-off).
+                if (item.isFile()) {
+                    RecentActivity.recordDownload(relPath);
+                }
+                ActivityLog.record(relPath, "downloaded");
+
                 if (item.isDirectory()) {
                     Path base = item.toPath();
                     Files.walk(base).filter(Files::isRegularFile).forEach(p -> {

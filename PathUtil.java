@@ -50,6 +50,23 @@ public class PathUtil {
         return target.toFile();
     }
 
+    // Resolves either a ROOT_DIR-relative "path", or - when trashId is
+    // given - an item under Config.TRASH_DIR, using the same
+    // trashId+sub convention as TrashBrowseHandler/TrashFileHandler/
+    // ViewerHandler. Shared by the handlers (reveal-in-file-manager,
+    // copy-path) that need a real File for either kind of item without
+    // duplicating that branch everywhere. Throws IOException with a
+    // message suitable to show the person directly.
+    public static File resolvePathOrTrash(String relPath, String trashId, String sub) throws IOException {
+        if (trashId != null && !trashId.isEmpty()) {
+            TrashManager.Entry entry = TrashManager.get(trashId);
+            if (entry == null) throw new IOException("That item is no longer in the trash.");
+            File base = new File(Config.TRASH_DIR, entry.trashedName);
+            return (sub == null || sub.isEmpty()) ? base : resolveWithinBase(base, sub);
+        }
+        return resolve(relPath);
+    }
+
     // Given a File somewhere under ROOT_DIR, return its path relative to the
     // root using forward slashes (e.g. "Photos/2024/beach.jpg").
     public static String relativeToRoot(File file) {

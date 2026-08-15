@@ -52,8 +52,10 @@ public class FileViewHandler implements HttpHandler {
 
         if ("download".equals(mode)) {
             RecentActivity.recordDownload(relPath);
+            ActivityLog.record(relPath, "downloaded");
         } else {
             RecentActivity.recordView(relPath);
+            ActivityLog.record(relPath, "viewed");
         }
 
         long fileLength = file.length();
