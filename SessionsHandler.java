@@ -58,6 +58,14 @@ public class SessionsHandler implements HttpHandler {
 
         sb.append("<button id='newDriveSessionBtn' class='session-btn session-btn-primary session-new-drive-btn' onclick='createDriveSession()'>")
           .append("<img src='").append(DriveIcon.DATA_URI).append("' width='14' height='14' alt=''> New Google Drive session</button>");
+
+        sb.append("<div class='session-filter-bar'>");
+        sb.append("<input type='text' id='sessionSearchInput' class='session-filter-input' placeholder='Search sessions by name...'>");
+        sb.append("<label class='session-filter-label'>From <input type='date' id='sessionDateFrom' class='session-filter-date'></label>");
+        sb.append("<label class='session-filter-label'>To <input type='date' id='sessionDateTo' class='session-filter-date'></label>");
+        sb.append("<button id='sessionFilterClear' class='session-btn session-filter-clear' type='button'>Clear</button>");
+        sb.append("</div>");
+
         sb.append("<div class='session-list-divider'></div>");
 
         sb.append("<div id='sessionList' class='session-list'><p class='empty'>Loading...</p></div>");
@@ -130,6 +138,38 @@ public class SessionsHandler implements HttpHandler {
 
         "function escapeHtml(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }" +
 
+        // Filter state read fresh from the inputs on every render, rather
+        // than cached - renderSessions() already re-runs on its own poll
+        // timer and after every action, and the input listeners below call
+        // it directly too, so results stay in sync with typing/date
+        // changes without any extra bookkeeping.
+        "function currentFilters(){" +
+          "var q=(document.getElementById('sessionSearchInput')||{}).value||'';" +
+          "var from=(document.getElementById('sessionDateFrom')||{}).value||'';" +
+          "var to=(document.getElementById('sessionDateTo')||{}).value||'';" +
+          // Date inputs are just a calendar day - treat "to" as inclusive
+          // of the whole day by pushing it to 23:59:59.999 before comparing
+          // against a session's updatedAt millis timestamp.
+          "var fromMs=from?new Date(from+'T00:00:00').getTime():null;" +
+          "var toMs=to?new Date(to+'T23:59:59.999').getTime():null;" +
+          "return {q:q.trim().toLowerCase(), fromMs:fromMs, toMs:toMs};" +
+        "}" +
+        "function sessionMatchesFilters(s, f){" +
+          "if(f.q){" +
+            "var name=(s.name||(isDriveSession(s)?'Google Drive':'Unnamed session')).toLowerCase();" +
+            "if(name.indexOf(f.q)===-1) return false;" +
+          "}" +
+          "if(f.fromMs!=null || f.toMs!=null){" +
+            // A session with no updatedAt yet (never saved) has no
+            // meaningful date to range-filter on - exclude it as soon as
+            // any date bound is set rather than guessing a timestamp for it.
+            "if(!s.updatedAt) return false;" +
+            "if(f.fromMs!=null && s.updatedAt<f.fromMs) return false;" +
+            "if(f.toMs!=null && s.updatedAt>f.toMs) return false;" +
+          "}" +
+          "return true;" +
+        "}" +
+
         "function renderSessions(){" +
           "var list=document.getElementById('sessionList');" +
           "var sessions=Object.assign({}, loadSessionsMap());" +
@@ -147,6 +187,13 @@ public class SessionsHandler implements HttpHandler {
           "var ids=Object.keys(sessions);" +
           "if(!ids.length){ list.innerHTML=\"<p class='empty'>No sessions yet - open a new browser tab, or start a Drive session above.</p>\"; return; }" +
           "var mine=currentSessionId();" +
+          "var filters=currentFilters();" +
+          "var filtered=ids.filter(function(id){ return sessionMatchesFilters(sessions[id], filters); });" +
+          "if(!filtered.length){" +
+            "list.innerHTML=\"<p class='empty'>No sessions match your search or date range. Try clearing the filters above.</p>\";" +
+            "return;" +
+          "}" +
+          "ids=filtered;" +
           "ids.sort(function(a,b){" +
             "return (sessions[b].updatedAt||0)-(sessions[a].updatedAt||0);" +
           "});" +
@@ -242,6 +289,21 @@ public class SessionsHandler implements HttpHandler {
             "saveSessionsMap(sessions);" +
             "renderSessions();" +
           "}" +
+        "});" +
+
+        // Wire up the filter bar. The search box re-renders on every
+        // keystroke (cheap - the session list is never large enough for
+        // this to matter); the date pickers re-render on 'change' since
+        // that's the only event a native <input type=date> reliably fires
+        // as the person interacts with its picker UI.
+        "document.getElementById('sessionSearchInput').addEventListener('input', renderSessions);" +
+        "document.getElementById('sessionDateFrom').addEventListener('change', renderSessions);" +
+        "document.getElementById('sessionDateTo').addEventListener('change', renderSessions);" +
+        "document.getElementById('sessionFilterClear').addEventListener('click', function(){" +
+          "document.getElementById('sessionSearchInput').value='';" +
+          "document.getElementById('sessionDateFrom').value='';" +
+          "document.getElementById('sessionDateTo').value='';" +
+          "renderSessions();" +
         "});" +
 
         "renderSessions();" +

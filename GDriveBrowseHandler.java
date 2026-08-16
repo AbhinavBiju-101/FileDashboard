@@ -124,6 +124,16 @@ public class GDriveBrowseHandler implements HttpHandler {
 
         sb.append("<div class='topbar'>");
         sb.append("<a class='brand-link' href='/dashboard' onclick=\"if(parent&&parent.navigateCurrentTab){ parent.navigateCurrentTab('/dashboard'); return false; }\"><h1>File Dashboard</h1></a>");
+
+        // Breadcrumb and the "signed in as" chip share one row (rather than
+        // the chip getting its own row below) specifically so this page's
+        // toolbar/search row lands at the exact same vertical position as
+        // local Browse's - a whole extra stacked row here would push the
+        // search bar down relative to the local file browser tab sitting
+        // right next to it. The chip lives at the row's right edge (flex
+        // space-between); the breadcrumb itself is unaffected and still
+        // starts flush with "File Dashboard" above it.
+        sb.append("<div class='gdrive-topline'>");
         sb.append("<div class='breadcrumb'>");
         sb.append("<a href='/gdrive?path=").append(acctQS).append("'>").append(DriveIcon.img(14)).append(" My Drive</a>");
         for (int i = 0; i < crumbs.size(); i++) {
@@ -140,12 +150,11 @@ public class GDriveBrowseHandler implements HttpHandler {
         }
         sb.append("</div>");
 
-        // "Signed in as" strip right above the search/filter row - who this
-        // whole page's contents belong to, at a glance, so browsing one of
-        // several connected accounts' Drives never leaves any doubt about
-        // which one is on screen (see ShellScript.java's account picker,
-        // which is what let more than one become possible to have open at
-        // once in the first place).
+        // "Signed in as" chip - who this whole page's contents belong to,
+        // at a glance, so browsing one of several connected accounts'
+        // Drives never leaves any doubt about which one is on screen (see
+        // ShellScript.java's account picker, which is what let more than
+        // one become possible to have open at once in the first place).
         if (account != null) {
             sb.append("<div class='gdrive-account-strip'>");
             if (account.picture != null) {
@@ -157,6 +166,7 @@ public class GDriveBrowseHandler implements HttpHandler {
             }
             sb.append("</div>");
         }
+        sb.append("</div>");
 
         // Same visual slot/markup as local Browse's toolbar (see
         // BrowseHandler.buildToolbar()): a .toolbar row (just the search
@@ -197,7 +207,7 @@ public class GDriveBrowseHandler implements HttpHandler {
                     if (GDriveClient.isFolder(item.mimeType)) {
                         sb.append(folderCard(crumbs, item, acctQS, currentFolderId));
                     } else {
-                        sb.append(fileCard(item, acctQS, currentFolderId));
+                        sb.append(fileCard(item, acctQS, currentFolderId, accountId));
                     }
                 }
                 if (items.isEmpty()) {
@@ -313,10 +323,31 @@ public class GDriveBrowseHandler implements HttpHandler {
     // /gdrive-viewer tab. "Open"/"Open in new tab" still use the original
     // webViewLink so editing still works there.
     static String embeddablePreviewUrl(String webViewLink) {
+        return embeddablePreviewUrl(webViewLink, null);
+    }
+
+    // Overload that pins the iframe to a specific Google identity via the
+    // documented "authuser" query param, keyed by the connected account's
+    // own email rather than a Google-assigned session index (Google accepts
+    // either). Without this, docs.google.com/sheets.google.com/etc. decide
+    // which of the browser's *own* logged-in Google sessions to render with
+    // using their own last-active heuristic - which has nothing to do with
+    // which account this app's OAuth token belongs to, since the iframe is
+    // a direct request to Google's domain, not something proxied through
+    // this server. If the browser has no session at all for this email
+    // (most common case: a fresh browser profile that's only ever been
+    // signed into a different Google account), Google will show its own
+    // account-chooser/sign-in prompt inside the iframe regardless of this
+    // param - that's a browser-level Google session gap this app has no way
+    // to close on its own, only to disambiguate once it's been closed by
+    // signing into that email in this same browser profile.
+    static String embeddablePreviewUrl(String webViewLink, String accountEmail) {
         if (webViewLink == null) return null;
         int editIdx = webViewLink.indexOf("/edit");
-        if (editIdx != -1) return webViewLink.substring(0, editIdx) + "/preview";
-        return webViewLink;
+        String base = editIdx != -1 ? webViewLink.substring(0, editIdx) + "/preview" : webViewLink;
+        if (accountEmail == null || accountEmail.trim().isEmpty()) return base;
+        String sep = base.contains("?") ? "&" : "?";
+        return base + sep + "authuser=" + PathUtil.urlEncode(accountEmail);
     }
 
     private String folderCard(List<Crumb> crumbs, GDriveClient.DriveItem item, String acctQS, String parentId) {
@@ -353,6 +384,15 @@ public class GDriveBrowseHandler implements HttpHandler {
     }
 
     static String fileCard(GDriveClient.DriveItem item, String acctQS, String parentId) {
+        return fileCard(item, acctQS, parentId, null);
+    }
+
+    // accountId lets a native-doc card's preview iframe pin itself to the
+    // right Google identity (see embeddablePreviewUrl()'s comment) - null
+    // is fine for callers (like search hits) where that lookup isn't worth
+    // threading through, it just means Google falls back to its own
+    // browser-session-based default for that card's preview.
+    static String fileCard(GDriveClient.DriveItem item, String acctQS, String parentId, String accountId) {
         String name = PathUtil.htmlEscape(item.name);
         boolean nativeDoc = GDriveClient.isNativeGoogleDoc(item.mimeType);
         String category = categoryFor(item.mimeType, item.name);
@@ -362,9 +402,15 @@ public class GDriveBrowseHandler implements HttpHandler {
         boolean textlike = isTextLike(item.mimeType, item.name);
         String mime = item.mimeType == null ? "" : item.mimeType;
 
+        String accountEmail = null;
+        if (accountId != null) {
+            GDriveAuth.AccountInfo info = GDriveAuth.getAccountInfo(accountId);
+            if (info != null) accountEmail = info.email;
+        }
+
         String downloadUrl = nativeDoc ? "" : "/gdrive-file?id=" + PathUtil.urlEncode(item.id)
               + "&name=" + PathUtil.urlEncode(item.name) + "&mime=" + PathUtil.urlEncode(mime) + acctQS;
-        String viewUrl = nativeDoc ? embeddablePreviewUrl(item.webViewLink)
+        String viewUrl = nativeDoc ? embeddablePreviewUrl(item.webViewLink, accountEmail)
               : (downloadUrl.isEmpty() ? "" : downloadUrl + "&mode=view");
 
         StringBuilder sb = new StringBuilder();
@@ -941,9 +987,10 @@ public class GDriveBrowseHandler implements HttpHandler {
             // but present on every Drive page so which account's files are
             // on screen is never ambiguous, especially once more than one
             // is connected.
-            ".gdrive-account-strip{display:flex;align-items:center;gap:8px;padding:8px 24px;color:#555;font-size:12px;}" +
-            ".gdrive-account-avatar{width:20px;height:20px;border-radius:50%;flex-shrink:0;}" +
-            ".gdrive-account-name{font-weight:600;color:#333;}" +
+            ".gdrive-topline{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;}" +
+            ".gdrive-account-strip{display:flex;align-items:center;gap:8px;color:#555;font-size:12px;flex-shrink:0;}" +
+            ".gdrive-account-avatar{width:26px;height:26px;border-radius:50%;flex-shrink:0;}" +
+            ".gdrive-account-name{font-weight:600;color:#333;font-size:13px;}" +
             ".gdrive-account-email{color:#888;}" +
             "</style>";
     }

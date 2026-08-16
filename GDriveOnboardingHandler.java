@@ -93,9 +93,18 @@ public class GDriveOnboardingHandler implements HttpHandler {
                     if (isFolder && DEFAULT_FOLDERS.containsKey(item.name)) continue;
                     if (!first) json.append(",");
                     first = false;
+                    // category/ext piggyback on GDriveBrowseHandler's own
+                    // grouping (categoryFor()) so the wizard's type filter
+                    // chips split items into exactly the same buckets the
+                    // normal Drive grid view does - same muscle memory, one
+                    // source of truth for what counts as "a PDF" etc.
+                    String category = isFolder ? "folder" : GDriveBrowseHandler.categoryFor(item.mimeType, item.name);
+                    String ext = isFolder ? "" : GridRenderer.getExtension(item.name).toLowerCase();
                     json.append("{\"id\":\"").append(MiniJson.escape(item.id)).append("\",")
                         .append("\"name\":\"").append(MiniJson.escape(item.name)).append("\",")
-                        .append("\"kind\":\"").append(isFolder ? "folder" : "file").append("\"}");
+                        .append("\"kind\":\"").append(isFolder ? "folder" : "file").append("\",")
+                        .append("\"category\":\"").append(MiniJson.escape(category)).append("\",")
+                        .append("\"ext\":\"").append(MiniJson.escape(ext)).append("\"}");
                 }
                 json.append("]");
                 writeJson(exchange, json.toString());

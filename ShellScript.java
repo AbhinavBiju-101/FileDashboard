@@ -521,6 +521,13 @@ public class ShellScript {
         "var shellOnboardingPromptedThisLoad={};" +
         "var GDRIVE_ONBOARDING_ICONS={Pictures:'&#128247;',Videos:'&#127909;',Documents:'&#128196;',Music:'&#127925;',Uploads:'&#11014;&#65039;'};" +
         "var GDRIVE_ONBOARDING_ORDER=['Pictures','Videos','Documents','Music','Uploads'];" +
+        // Same 8 buckets/labels as GDriveBrowseHandler.buildFilterChips()
+        // (and BrowseHandler's local equivalent) so the wizard's type
+        // filter sorts items into the exact same categories the normal
+        // Drive grid does - matches the "category" field GDriveOnboardingHandler's
+        // ?listRoot=1 now returns per item (see categoryFor() there).
+        "var GDRIVE_WIZARD_FILTER_CHIPS=[['all','All'],['image','Images'],['pdf','PDFs'],['document','Docs'],['video','Video'],['audio','Audio'],['archive','Archives'],['other','Other']];" +
+        "var GDRIVE_WIZARD_ICONS={image:'&#128247;',pdf:'&#128196;',document:'&#128196;',spreadsheet:'&#128196;',presentation:'&#128196;',video:'&#127909;',audio:'&#127925;',archive:'&#128230;',other:'&#128196;'};" +
         "function shellCheckDriveOnboarding(accountId){" +
           "fetch('/gdrive-onboarding?account='+encodeURIComponent(accountId)).then(function(r){return r.json();}).then(function(res){" +
             "shellRenderDriveOnboardingFolders(accountId, res.folders||{});" +
@@ -616,33 +623,112 @@ public class ShellScript {
               "if(frame){ try{ frame.contentWindow.location.reload(); }catch(e){} }" +
             "}" +
           "}" +
+          // Wizard-local selection state, reset fresh each step (see
+          // renderStep() below) - mirrors the exact click/ctrl+click/
+          // shift+click model PageScripts.java's normal grid uses
+          // (selectOnly/toggleSelect/rangeSelect), just scoped to this
+          // overlay's own .card elements instead of the whole document,
+          // and tracking item ids instead of file paths since that's what
+          // action=move-into actually needs.
+          "var selectedIds=[];" +
+          "var lastSelectedCard=null;" +
+          "var activeTypeFilter='all';" +
+          "var searchQuery='';" +
+          "function wizardCards(){ return Array.prototype.slice.call(overlay.querySelectorAll('.card[data-item-id]')); }" +
+          "function clearWizardSelection(){ wizardCards().forEach(function(c){ c.classList.remove('selected'); }); selectedIds=[]; }" +
+          "function selectOnlyCard(card){ clearWizardSelection(); card.classList.add('selected'); selectedIds=[card.dataset.itemId]; lastSelectedCard=card; }" +
+          "function toggleSelectCard(card){" +
+            "var id=card.dataset.itemId;" +
+            "var i=selectedIds.indexOf(id);" +
+            "if(i===-1){ card.classList.add('selected'); selectedIds.push(id); }" +
+            "else{ card.classList.remove('selected'); selectedIds.splice(i,1); }" +
+            "lastSelectedCard=card;" +
+          "}" +
+          "function rangeSelectCard(card){" +
+            "var cards=wizardCards();" +
+            "var a=cards.indexOf(lastSelectedCard), b=cards.indexOf(card);" +
+            "if(a===-1){ selectOnlyCard(card); return; }" +
+            "var lo=Math.min(a,b), hi=Math.max(a,b);" +
+            "for(var i=lo;i<=hi;i++){ cards[i].classList.add('selected'); if(selectedIds.indexOf(cards[i].dataset.itemId)===-1) selectedIds.push(cards[i].dataset.itemId); }" +
+            "lastSelectedCard=card;" +
+          "}" +
+          "function itemVisible(it){" +
+            "if(activeTypeFilter!=='all' && it.category!==activeTypeFilter) return false;" +
+            "if(searchQuery && it.name.toLowerCase().indexOf(searchQuery)===-1) return false;" +
+            "return true;" +
+          "}" +
+          "function wizardCard(it){" +
+            "var iconHtml = it.kind==='folder' ? \"<div class='icon'>&#128193;</div>\" : \"<div class='icon'>\"+(GDRIVE_WIZARD_ICONS[it.category]||'&#128196;')+\"</div>\";" +
+            "return \"<div class='card \"+(it.kind==='folder'?'folder':'file')+\"' data-item-id=\\\"\"+it.id+\"\\\" data-category=\\\"\"+it.category+\"\\\">\" +" +
+              "iconHtml +" +
+              "\"<div class='name' title=\\\"\"+escapeHtmlWiz(it.name)+\"\\\">\"+escapeHtmlWiz(it.name)+\"</div>\" +" +
+            "\"</div>\";" +
+          "}" +
+          "function escapeHtmlWiz(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }" +
+          "function refreshGrid(){" +
+            "var gridEl=overlay.querySelector('.gdrive-organize-grid');" +
+            "if(!gridEl) return;" +
+            "var visible=(rootItems||[]).filter(itemVisible);" +
+            // Selection shouldn't silently keep ids that just scrolled out
+            // of view behind a filter - move-into only ever acts on what's
+            // currently selectable, so drop anything no longer visible.
+            "selectedIds=selectedIds.filter(function(id){ return visible.some(function(it){ return it.id===id; }); });" +
+            "gridEl.innerHTML = visible.length ? visible.map(wizardCard).join('') : \"<p class='gdrive-organize-empty'>Nothing matches here.</p>\";" +
+            "gridEl.querySelectorAll('.card').forEach(function(c){ if(selectedIds.indexOf(c.dataset.itemId)!==-1) c.classList.add('selected'); });" +
+            "updateNextLabel();" +
+          "}" +
+          "function updateNextLabel(){" +
+            "var btn=document.getElementById('gdriveOrganizeNext');" +
+            "if(!btn) return;" +
+            "var atLastStep=(stepIndex+1>=steps.length);" +
+            "btn.textContent = selectedIds.length ? ('Move '+selectedIds.length+' item'+(selectedIds.length===1?'':'s')+(atLastStep?' & finish':' & next')) : (atLastStep?'Finish':'Next');" +
+          "}" +
           "function renderStep(){" +
             "if(stepIndex>=steps.length){ finishWizard(); return; }" +
             "var name=steps[stepIndex];" +
             "var icon=GDRIVE_ONBOARDING_ICONS[name]||'';" +
-            "var rows=(rootItems||[]).map(function(it){" +
-              "var itemIcon=it.kind==='folder'?'&#128193;':'&#128196;';" +
-              "return \"<label class='gdrive-organize-row'><input type='checkbox' value='\"+it.id+\"'> \"+itemIcon+\" \"+it.name+\"</label>\";" +
+            "selectedIds=[]; lastSelectedCard=null; activeTypeFilter='all'; searchQuery='';" +
+            "var chips=GDRIVE_WIZARD_FILTER_CHIPS.map(function(c){" +
+              "return \"<span class='chip\"+(c[0]==='all'?' active':'')+\"' data-wizard-filter=\\\"\"+c[0]+\"\\\">\"+c[1]+\"</span>\";" +
             "}).join('');" +
-            "if(!rows){ rows=\"<p class='gdrive-organize-empty'>Nothing left at the top level of your Drive to move.</p>\"; }" +
-            "overlay.innerHTML=\"<div class='gdrive-picker-box gdrive-onboarding-box'>\" +" +
+            "overlay.innerHTML=\"<div class='gdrive-picker-box gdrive-onboarding-box gdrive-organize-box'>\" +" +
               "\"<div class='gdrive-picker-header'>\"+icon+\" Move files into \"+name+\" (\"+(stepIndex+1)+\"/\"+steps.length+\")</div>\" +" +
-              "\"<p class='gdrive-onboarding-desc'>Pick anything from the top level of your Drive that belongs in \"+name+\". Leave everything unchecked to skip this folder.</p>\" +" +
-              "\"<div class='gdrive-organize-rows'>\"+rows+\"</div>\" +" +
+              "\"<p class='gdrive-onboarding-desc'>Pick anything from the top level of your Drive that belongs in \"+name+\". Leave nothing selected to skip this folder.</p>\" +" +
+              "\"<div class='toolbar gdrive-organize-toolbar'><input type='text' id='gdriveOrganizeSearch' placeholder='Search by name...' autocomplete='off'></div>\" +" +
+              "\"<div class='filter-chips'>\"+chips+\"</div>\" +" +
+              "\"<div class='grid gdrive-organize-grid'></div>\" +" +
               "\"<div class='gdrive-onboarding-actions'>\" +" +
                 "\"<button class='gdrive-onboarding-skip' id='gdriveOrganizeSkip'>\"+(stepIndex+1<steps.length?'Skip this folder':'Skip')+\"</button>\" +" +
-                "\"<button class='gdrive-onboarding-create' id='gdriveOrganizeNext'>\"+(stepIndex+1<steps.length?'Next':'Finish')+\"</button>\" +" +
+                "\"<button class='gdrive-onboarding-create' id='gdriveOrganizeNext'>Next</button>\" +" +
               "\"</div>\" +" +
             "\"</div>\";" +
+            "refreshGrid();" +
+            "document.getElementById('gdriveOrganizeSearch').addEventListener('input', function(e){ searchQuery=e.target.value.trim().toLowerCase(); refreshGrid(); });" +
+            "overlay.querySelectorAll('[data-wizard-filter]').forEach(function(chip){" +
+              "chip.addEventListener('click', function(){" +
+                "overlay.querySelectorAll('[data-wizard-filter]').forEach(function(c){ c.classList.remove('active'); });" +
+                "chip.classList.add('active');" +
+                "activeTypeFilter=chip.dataset.wizardFilter;" +
+                "refreshGrid();" +
+              "});" +
+            "});" +
+            "overlay.querySelector('.gdrive-organize-grid').addEventListener('click', function(e){" +
+              "var card=e.target.closest('.card[data-item-id]');" +
+              "if(!card) return;" +
+              "if(e.shiftKey){ rangeSelectCard(card); }" +
+              "else if(e.ctrlKey||e.metaKey){ toggleSelectCard(card); }" +
+              "else{ (selectedIds.length===1&&selectedIds[0]===card.dataset.itemId) ? (clearWizardSelection()) : selectOnlyCard(card); }" +
+              "updateNextLabel();" +
+            "});" +
             "document.getElementById('gdriveOrganizeSkip').addEventListener('click', function(){ stepIndex++; renderStep(); });" +
             "document.getElementById('gdriveOrganizeNext').addEventListener('click', function(){" +
-              "var ids=Array.prototype.slice.call(overlay.querySelectorAll('input[type=checkbox]:checked')).map(function(cb){return cb.value;});" +
+              "var ids=selectedIds.slice();" +
               "if(!ids.length){ stepIndex++; renderStep(); return; }" +
               "var btn=document.getElementById('gdriveOrganizeNext'); btn.disabled=true; btn.textContent='Moving...';" +
               "fetch('/gdrive-onboarding',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'}," +
                 "body:new URLSearchParams({action:'move-into',account:accountId,targetId:folders[name],ids:ids.join(',')}).toString()})" +
                 ".then(function(r){return r.json();}).then(function(){ removeMoved(ids); stepIndex++; renderStep(); })" +
-                ".catch(function(){ btn.disabled=false; btn.textContent='Next'; alert('Could not move those items.'); });" +
+                ".catch(function(){ btn.disabled=false; updateNextLabel(); alert('Could not move those items.'); });" +
             "});" +
             "overlay.querySelector('.gdrive-picker-box').addEventListener('click', function(e){ e.stopPropagation(); });" +
           "}" +

@@ -91,7 +91,12 @@ public class GDriveViewerHandler implements HttpHandler {
 
         String downloadUrl = isNative ? null : "/gdrive-file?id=" + PathUtil.urlEncode(id)
               + "&name=" + PathUtil.urlEncode(name) + "&mime=" + PathUtil.urlEncode(mime) + acctQS;
-        String viewUrl = isNative ? GDriveBrowseHandler.embeddablePreviewUrl(webViewLink)
+        String accountEmail = null;
+        if (isNative) {
+            GDriveAuth.AccountInfo info = GDriveAuth.getAccountInfo(accountId);
+            if (info != null) accountEmail = info.email;
+        }
+        String viewUrl = isNative ? GDriveBrowseHandler.embeddablePreviewUrl(webViewLink, accountEmail)
               : (downloadUrl + "&mode=view");
 
         // Fetched right here, server-side, the same way GDriveDownloadHandler

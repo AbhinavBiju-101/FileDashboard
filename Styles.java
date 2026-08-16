@@ -54,6 +54,11 @@ public class Styles {
         // .session-list.
         ".session-new-drive-btn{margin:16px 24px 0;display:inline-flex;align-items:center;gap:8px;}" +
         ".session-new-drive-btn img{flex-shrink:0;}" +
+        ".session-filter-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 24px 0;}" +
+        ".session-filter-input{flex:1;min-width:180px;padding:6px 10px;border:1px solid #c7cbd1;border-radius:6px;font-size:13px;}" +
+        ".session-filter-label{display:flex;align-items:center;gap:6px;font-size:12px;color:#666;white-space:nowrap;}" +
+        ".session-filter-date{padding:5px 8px;border:1px solid #c7cbd1;border-radius:6px;font-size:13px;}" +
+        ".session-filter-clear{font-size:12px;padding:6px 10px;}" +
         ".session-list-divider{height:1px;background:#e2e4e8;margin:16px 24px 0;}" +
         ".session-list{padding:16px 24px 24px;display:flex;flex-direction:column;gap:10px;}" +
         ".session-row{background:#fff;border:1px solid #e2e4e8;border-radius:10px;padding:12px 16px;" +
@@ -331,8 +336,18 @@ public class Styles {
         ".gdrive-onboarding-create:disabled{opacity:.6;cursor:default;}" +
         // Organize wizard steps (see ShellScript.java's
         // shellOpenDriveOrganizeWizard()) - same box/desc/actions classes
-        // as the onboarding prompt just above, its own scrollable checklist
-        // instead of a fixed 5-row list.
+        // as the onboarding prompt just above. The step body used to be a
+        // plain scrollable checklist (.gdrive-organize-row/-rows, kept
+        // below only for backward compatibility if anything else still
+        // references them); it's now a real .grid of .card items - same
+        // classes the normal folder/Drive browse views use - inside a
+        // wider, taller box so a multi-column grid actually has room.
+        ".gdrive-organize-box{width:620px;max-width:92vw;max-height:80vh;}" +
+        ".gdrive-organize-toolbar{padding:0 16px;margin-bottom:2px;}" +
+        ".gdrive-organize-toolbar input[type=text]{width:100%;padding:7px 10px;border:1px solid #c7cbd1;border-radius:6px;font-size:13px;box-sizing:border-box;}" +
+        ".gdrive-organize-box .filter-chips{padding:8px 16px 0;}" +
+        ".gdrive-organize-grid{max-height:340px;overflow-y:auto;padding:12px 16px;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;}" +
+        ".gdrive-organize-grid .card{padding:10px 8px;}" +
         ".gdrive-organize-rows{max-height:280px;overflow-y:auto;padding:4px 16px 8px;display:flex;flex-direction:column;gap:6px;}" +
         ".gdrive-organize-row{display:flex;align-items:center;gap:8px;font-size:13px;color:#333;cursor:pointer;padding:2px 0;}" +
         ".gdrive-organize-empty{padding:8px 16px 16px;color:#888;font-size:13px;}" +
