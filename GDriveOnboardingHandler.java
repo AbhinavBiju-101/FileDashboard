@@ -73,6 +73,38 @@ public class GDriveOnboardingHandler implements HttpHandler {
         String account = QueryUtil.getParam(query, "account");
         account = account == null ? null : URLDecoder.decode(account, "UTF-8");
         String accountId = GDriveAuth.resolveAccount(account);
+
+        // ?listRoot=1 - a lightweight listing of root-level items for the
+        // "move files into <folder>" wizard steps (see ShellScript.java's
+        // shellOpenDriveOrganizeWizard()) - deliberately its own tiny
+        // response shape (id/name/kind only) rather than reusing
+        // GDriveBrowseHandler's full card HTML, since the wizard renders
+        // its own compact checkbox rows, not real grid cards. Excludes the
+        // default organizing folders themselves so a person can't
+        // accidentally move e.g. "Documents" into "Pictures" mid-wizard.
+        if ("1".equals(QueryUtil.getParam(query, "listRoot"))) {
+            if (accountId == null) { writeJson(exchange, "[]"); return; }
+            try {
+                List<GDriveClient.DriveItem> items = GDriveClient.listChildren(accountId, "root");
+                StringBuilder json = new StringBuilder("[");
+                boolean first = true;
+                for (GDriveClient.DriveItem item : items) {
+                    boolean isFolder = GDriveClient.isFolder(item.mimeType);
+                    if (isFolder && DEFAULT_FOLDERS.containsKey(item.name)) continue;
+                    if (!first) json.append(",");
+                    first = false;
+                    json.append("{\"id\":\"").append(MiniJson.escape(item.id)).append("\",")
+                        .append("\"name\":\"").append(MiniJson.escape(item.name)).append("\",")
+                        .append("\"kind\":\"").append(isFolder ? "folder" : "file").append("\"}");
+                }
+                json.append("]");
+                writeJson(exchange, json.toString());
+            } catch (IOException e) {
+                writeJson(exchange, "[]");
+            }
+            return;
+        }
+
         if (accountId == null) {
             respondJson(exchange, "needs-prompt", null, "No Google account is connected.");
             return;
@@ -123,6 +155,32 @@ public class GDriveOnboardingHandler implements HttpHandler {
         if ("skip".equals(action)) {
             UserDataStore.setDriveOnboarding(accountId, "skipped", null);
             respondJson(exchange, "skipped", null, null);
+            return;
+        }
+        // Moves a batch of root-level items into one of the just-created
+        // (or already-existing) default folders - one call per wizard step
+        // (see ShellScript.java's shellOpenDriveOrganizeWizard()), all
+        // items assumed to be coming from root since that's the only thing
+        // the wizard ever offers to move from.
+        if ("move-into".equals(action)) {
+            String targetId = formParam(body, "targetId");
+            String idsParam = formParam(body, "ids");
+            if (targetId == null || targetId.isEmpty()) { respondError(exchange, "Missing destination folder."); return; }
+            String[] ids = (idsParam == null || idsParam.isEmpty()) ? new String[0] : idsParam.split(",");
+            int moved = 0;
+            for (String itemId : ids) {
+                try {
+                    GDriveClient.moveItem(accountId, itemId, "root", targetId);
+                    moved++;
+                } catch (IOException e) {
+                    // Keep going - one bad id (already moved by a stray
+                    // double-click, deleted meanwhile, etc.) shouldn't abort
+                    // the rest of the batch. The response's "moved" count
+                    // lets the client notice if fewer went through than
+                    // requested.
+                }
+            }
+            writeJson(exchange, "{\"success\":true,\"moved\":" + moved + ",\"requested\":" + ids.length + "}");
             return;
         }
         if (!"create".equals(action)) {

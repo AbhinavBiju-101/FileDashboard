@@ -142,7 +142,7 @@ public class SessionsHandler implements HttpHandler {
           // since nothing's been persisted to read it back from otherwise.
           "var mine0=currentSessionId();" +
           "if(mine0 && !sessions[mine0] && window.parent && window.parent.shellTabs){" +
-            "sessions[mine0]={id:mine0, name:'', drive:!!window.parent.shellSessionIsDrive, tabs:window.parent.shellTabs, groups:window.parent.shellGroups||[], createdAt:0, updatedAt:0};" +
+            "sessions[mine0]={id:mine0, name:'', drive:!!window.parent.shellSessionIsDrive, accountId:window.parent.shellCurrentDriveAccountId&&window.parent.shellCurrentDriveAccountId(), tabs:window.parent.shellTabs, groups:window.parent.shellGroups||[], createdAt:0, updatedAt:0};" +
           "}" +
           "var ids=Object.keys(sessions);" +
           "if(!ids.length){ list.innerHTML=\"<p class='empty'>No sessions yet - open a new browser tab, or start a Drive session above.</p>\"; return; }" +
@@ -212,7 +212,7 @@ public class SessionsHandler implements HttpHandler {
               // real rather than an empty stub), or (defensively) some
               // other id that's simply gone.
               "if(id===currentSessionId() && window.parent && window.parent.shellTabs){" +
-                "s={id:id, name:'', drive:!!window.parent.shellSessionIsDrive, tabs:window.parent.shellTabs, groups:window.parent.shellGroups||[], createdAt:Date.now(), updatedAt:Date.now()};" +
+                "s={id:id, name:'', drive:!!window.parent.shellSessionIsDrive, accountId:window.parent.shellCurrentDriveAccountId&&window.parent.shellCurrentDriveAccountId(), tabs:window.parent.shellTabs, groups:window.parent.shellGroups||[], createdAt:Date.now(), updatedAt:Date.now()};" +
               "}else{" +
                 "s={id:id, name:(id==='session-gdrive'?'Google Drive':''), tabs:[], groups:[], createdAt:Date.now(), updatedAt:Date.now()};" +
               "}" +

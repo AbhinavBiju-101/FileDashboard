@@ -205,6 +205,18 @@ public class ShellScript {
               "name:(existing&&existing.name)||(shellSessionIsDrive?'Google Drive':('Session '+fdFormatDate(Date.now())))," +
               "named:!!(existing&&existing.named)," +
               "drive:shellSessionIsDrive," +
+              // BUG FIX: this rebuild used to drop accountId entirely -
+              // shellCreateDriveSession() sets it once at creation, but the
+              // very next shellSaveState() (near-instant: a tab title
+              // update, heartbeat, anything) overwrote the whole record
+              // without it, silently reverting every /gdrive* link in that
+              // session back to "no account specified" the moment anything
+              // saved. Server-side that falls back to
+              // GDriveAuth.resolveAccount(null) - alphabetically the first
+              // connected account - which is exactly the "sidebar links
+              // dump me into the wrong account" bug this fixes: preserved
+              // from the existing record every time, same as name/createdAt.
+              "accountId:(existing&&existing.accountId)||null," +
               "tabs:shellTabs," +
               "active:shellActiveTabId," +
               "groups:shellGroups," +
@@ -285,7 +297,7 @@ public class ShellScript {
         "function shellRenderSessionMenu(){" +
           "var menu=document.getElementById('sidebarSessionMenu');" +
           "var sessions=Object.assign({}, shellLoadSessionsMap());" +
-          "if(!sessions[shellSessionId]){ sessions[shellSessionId]={id:shellSessionId,name:'',tabs:shellTabs,groups:shellGroups,drive:shellSessionIsDrive,createdAt:0,updatedAt:0}; }" +
+          "if(!sessions[shellSessionId]){ sessions[shellSessionId]={id:shellSessionId,name:'',tabs:shellTabs,groups:shellGroups,drive:shellSessionIsDrive,accountId:shellCurrentDriveAccountId(),createdAt:0,updatedAt:0}; }" +
           "var ids=Object.keys(sessions);" +
           "ids.sort(function(a,b){" +
             "if(a===shellSessionId) return -1;" +
@@ -530,7 +542,11 @@ public class ShellScript {
             "html+=\"<a class='sidebar-item' href='\"+href+\"' onclick=\\\"return navigateCurrentTab('\"+jsHref+\"');\\\">\" +" +
               "\"<span class='sidebar-icon'>\"+(GDRIVE_ONBOARDING_ICONS[name]||'')+\"</span><span class='sidebar-label'>\"+name+\"</span></a>\";" +
           "});" +
-          "container.innerHTML=html;" +
+          // Separator between "Home folders"/"Home files" and the onboarded
+          // shortcuts - only when there's actually something below it to
+          // separate from, so a not-yet-onboarded (or skipped) account's
+          // sidebar doesn't show a dangling divider with nothing under it.
+          "container.innerHTML=html?(\"<div class='sidebar-divider'></div>\"+html):'';" +
         "}" +
         "function shellOpenDriveOnboardingPrompt(accountId){" +
           "if(document.getElementById('gdriveOnboardingOverlay')) return;" +
@@ -564,14 +580,73 @@ public class ShellScript {
                 "overlay.remove();" +
                 "if(res.status==='error'){ alert(res.error||'Could not create folders.'); return; }" +
                 "shellRenderDriveOnboardingFolders(accountId, res.folders||{});" +
-                "var activeTab=shellTabs.find(function(t){ return t.id===shellActiveTabId; });" +
-                "if(activeTab && activeTab.url.indexOf('/gdrive')===0){" +
-                  "var frame=document.getElementById(shellActiveTabId+'-frame');" +
-                  "if(frame){ try{ frame.contentWindow.location.reload(); }catch(e){} }" +
-                "}" +
+                "shellOpenDriveOrganizeWizard(accountId, res.folders||{});" +
               "}).catch(function(){ btn.disabled=false; btn.textContent='Create folders'; alert('Could not create folders.'); });" +
           "});" +
           "overlay.addEventListener('click', function(e){ if(e.target===overlay) overlay.remove(); });" +
+        "}" +
+
+        // ---- Organize wizard: one step per created folder, offering to ----
+        // move root-level files/folders into it (see
+        // GDriveOnboardingHandler.java's ?listRoot=1 and action=move-into).
+        // Purely a convenience on top of onboarding - skipping every step
+        // (or the whole thing) leaves the Drive exactly as it was, just
+        // with the new empty folders sitting there from the step before.
+        "function shellOpenDriveOrganizeWizard(accountId, folders){" +
+          "var steps=GDRIVE_ONBOARDING_ORDER.filter(function(name){ return !!folders[name]; });" +
+          "if(!steps.length) return;" +
+          "var stepIndex=0;" +
+          "var rootItems=null;" +
+          "var overlay=document.createElement('div');" +
+          "overlay.id='gdriveOrganizeOverlay';" +
+          "overlay.className='gdrive-picker-overlay';" +
+          "document.body.appendChild(overlay);" +
+          "fetch('/gdrive-onboarding?listRoot=1&account='+encodeURIComponent(accountId)).then(function(r){return r.json();}).then(function(items){" +
+            "rootItems=items;" +
+            "renderStep();" +
+          "}).catch(function(){ rootItems=[]; renderStep(); });" +
+          "function removeMoved(ids){" +
+            "rootItems=rootItems.filter(function(it){ return ids.indexOf(it.id)===-1; });" +
+          "}" +
+          "function finishWizard(){" +
+            "overlay.remove();" +
+            "var activeTab=shellTabs.find(function(t){ return t.id===shellActiveTabId; });" +
+            "if(activeTab && activeTab.url.indexOf('/gdrive')===0){" +
+              "var frame=document.getElementById(shellActiveTabId+'-frame');" +
+              "if(frame){ try{ frame.contentWindow.location.reload(); }catch(e){} }" +
+            "}" +
+          "}" +
+          "function renderStep(){" +
+            "if(stepIndex>=steps.length){ finishWizard(); return; }" +
+            "var name=steps[stepIndex];" +
+            "var icon=GDRIVE_ONBOARDING_ICONS[name]||'';" +
+            "var rows=(rootItems||[]).map(function(it){" +
+              "var itemIcon=it.kind==='folder'?'&#128193;':'&#128196;';" +
+              "return \"<label class='gdrive-organize-row'><input type='checkbox' value='\"+it.id+\"'> \"+itemIcon+\" \"+it.name+\"</label>\";" +
+            "}).join('');" +
+            "if(!rows){ rows=\"<p class='gdrive-organize-empty'>Nothing left at the top level of your Drive to move.</p>\"; }" +
+            "overlay.innerHTML=\"<div class='gdrive-picker-box gdrive-onboarding-box'>\" +" +
+              "\"<div class='gdrive-picker-header'>\"+icon+\" Move files into \"+name+\" (\"+(stepIndex+1)+\"/\"+steps.length+\")</div>\" +" +
+              "\"<p class='gdrive-onboarding-desc'>Pick anything from the top level of your Drive that belongs in \"+name+\". Leave everything unchecked to skip this folder.</p>\" +" +
+              "\"<div class='gdrive-organize-rows'>\"+rows+\"</div>\" +" +
+              "\"<div class='gdrive-onboarding-actions'>\" +" +
+                "\"<button class='gdrive-onboarding-skip' id='gdriveOrganizeSkip'>\"+(stepIndex+1<steps.length?'Skip this folder':'Skip')+\"</button>\" +" +
+                "\"<button class='gdrive-onboarding-create' id='gdriveOrganizeNext'>\"+(stepIndex+1<steps.length?'Next':'Finish')+\"</button>\" +" +
+              "\"</div>\" +" +
+            "\"</div>\";" +
+            "document.getElementById('gdriveOrganizeSkip').addEventListener('click', function(){ stepIndex++; renderStep(); });" +
+            "document.getElementById('gdriveOrganizeNext').addEventListener('click', function(){" +
+              "var ids=Array.prototype.slice.call(overlay.querySelectorAll('input[type=checkbox]:checked')).map(function(cb){return cb.value;});" +
+              "if(!ids.length){ stepIndex++; renderStep(); return; }" +
+              "var btn=document.getElementById('gdriveOrganizeNext'); btn.disabled=true; btn.textContent='Moving...';" +
+              "fetch('/gdrive-onboarding',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'}," +
+                "body:new URLSearchParams({action:'move-into',account:accountId,targetId:folders[name],ids:ids.join(',')}).toString()})" +
+                ".then(function(r){return r.json();}).then(function(){ removeMoved(ids); stepIndex++; renderStep(); })" +
+                ".catch(function(){ btn.disabled=false; btn.textContent='Next'; alert('Could not move those items.'); });" +
+            "});" +
+            "overlay.querySelector('.gdrive-picker-box').addEventListener('click', function(e){ e.stopPropagation(); });" +
+          "}" +
+          "overlay.addEventListener('click', function(e){ if(e.target===overlay) finishWizard(); });" +
         "}" +
 
         // The other end of "Close & open here": some other browser tab has

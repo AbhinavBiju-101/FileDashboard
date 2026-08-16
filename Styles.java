@@ -329,6 +329,13 @@ public class Styles {
         ".gdrive-onboarding-create{background:#2563eb;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer;}" +
         ".gdrive-onboarding-create:hover{background:#1d4ed8;}" +
         ".gdrive-onboarding-create:disabled{opacity:.6;cursor:default;}" +
+        // Organize wizard steps (see ShellScript.java's
+        // shellOpenDriveOrganizeWizard()) - same box/desc/actions classes
+        // as the onboarding prompt just above, its own scrollable checklist
+        // instead of a fixed 5-row list.
+        ".gdrive-organize-rows{max-height:280px;overflow-y:auto;padding:4px 16px 8px;display:flex;flex-direction:column;gap:6px;}" +
+        ".gdrive-organize-row{display:flex;align-items:center;gap:8px;font-size:13px;color:#333;cursor:pointer;padding:2px 0;}" +
+        ".gdrive-organize-empty{padding:8px 16px 16px;color:#888;font-size:13px;}" +
         // Type-filter chips
         ".filter-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}" +
         ".chip{padding:5px 12px;border-radius:14px;background:#eef0f2;color:#555;font-size:12px;cursor:pointer;}" +

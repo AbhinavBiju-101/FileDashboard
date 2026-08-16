@@ -535,6 +535,8 @@ public class GDriveBrowseHandler implements HttpHandler {
     // reasonable scope cut for now, not wired up here.
     static final String PREVIEW_MODAL_HTML =
         "<div id='gdrivePreviewOverlay' class='preview-overlay' onclick=\"if(event.target===this) closeGDrivePreview();\">" +
+        "<button id='gdrivePreviewNavLeft' class='preview-nav-btn preview-nav-left' onclick='navigateGDrivePreview(-1)' aria-label='Previous file'>&#10094;</button>" +
+        "<button id='gdrivePreviewNavRight' class='preview-nav-btn preview-nav-right' onclick='navigateGDrivePreview(1)' aria-label='Next file'>&#10095;</button>" +
         "<div class='preview-box'>" +
         "<div class='preview-header'>" +
         "<span id='gdrivePreviewTitle' class='preview-title'></span>" +
@@ -553,9 +555,9 @@ public class GDriveBrowseHandler implements HttpHandler {
     // embeddablePreviewUrl()'s "/preview" URL - see its comment).
     static final String PREVIEW_SCRIPT =
         "<script>" +
-        "var PREVIEW_IMAGE_EXTS=['jpg','jpeg','png','gif','bmp','webp','svg','ico'];" +
-        "var PREVIEW_AUDIO_EXTS=['mp3','wav','ogg','m4a','flac','aac'];" +
-        "var PREVIEW_VIDEO_EXTS=['mp4','webm','mov','m4v'];" +
+        // Note: category (used just below) comes from the server-rendered
+        // data-gdrive-category attribute (see GDriveBrowseHandler.categoryFor()),
+        // not recomputed here from the extension.
         // Same mapping PageScripts.java's preview modal uses for hljs
         // language classes - redeclared here rather than shared, since
         // this page deliberately doesn't load PageScripts.SCRIPT wholesale
@@ -566,6 +568,7 @@ public class GDriveBrowseHandler implements HttpHandler {
         "function openGDrivePreview(card){" +
           "var overlay=document.getElementById('gdrivePreviewOverlay');" +
           "var body=document.getElementById('gdrivePreviewBody');" +
+          "currentGDrivePreviewId=card.dataset.gdriveId;" +
           "var name=card.dataset.gdriveName, mime=card.dataset.gdriveMime, category=card.dataset.gdriveCategory;" +
           "var viewUrl=card.dataset.gdriveViewurl, downloadUrl=card.dataset.gdriveDownloadurl, webViewLink=card.dataset.gdriveWebviewlink;" +
           "var isNative=card.dataset.gdriveNative==='1';" +
@@ -625,6 +628,22 @@ public class GDriveBrowseHandler implements HttpHandler {
           "overlay.classList.add('open');" +
         "}" +
         "var gdrivePreviewViewerHref='';" +
+        "var currentGDrivePreviewId=null;" +
+        // Same left/right cycling PageScripts.java's navigatePreview() does
+        // for local files - restricted to previewable file cards (skips
+        // folders, and anything currently hidden by CHIP_FILTER_SCRIPT's
+        // type filter), wrapping around at either end.
+        "function navigateGDrivePreview(direction){" +
+          "if(!currentGDrivePreviewId) return;" +
+          "var cards=Array.prototype.slice.call(document.querySelectorAll('.card.file[data-gdrive-id]'))" +
+            ".filter(function(c){ return c.style.display!=='none'; });" +
+          "var idx=cards.findIndex(function(c){ return c.dataset.gdriveId===currentGDrivePreviewId; });" +
+          "if(idx===-1||cards.length===0) return;" +
+          "var next=cards[(idx+direction+cards.length)%cards.length];" +
+          "openGDrivePreview(next);" +
+          "document.querySelectorAll('.card.selected').forEach(function(c){c.classList.remove('selected');});" +
+          "next.classList.add('selected');" +
+        "}" +
         "function toggleGDrivePreviewCodeView(){" +
           "var h=document.querySelector('#gdrivePreviewBody .code-highlighted'), r=document.querySelector('#gdrivePreviewBody .code-raw'), b=document.getElementById('gdrivePreviewToggleRawBtn');" +
           "if(!h||!r) return;" +
@@ -640,9 +659,14 @@ public class GDriveBrowseHandler implements HttpHandler {
         "function closeGDrivePreview(){" +
           "document.getElementById('gdrivePreviewOverlay').classList.remove('open');" +
           "document.getElementById('gdrivePreviewBody').innerHTML='';" +
+          "currentGDrivePreviewId=null;" +
         "}" +
         "document.addEventListener('keydown', function(e){" +
           "if(e.key==='Escape') closeGDrivePreview();" +
+          "if(currentGDrivePreviewId && (e.key==='ArrowLeft'||e.key==='ArrowRight')){" +
+            "e.preventDefault();" +
+            "navigateGDrivePreview(e.key==='ArrowLeft'?-1:1);" +
+          "}" +
           // Same "/" -> address bar forwarding PageScripts.java's local
           // pages do (see its keydown listener) - this page just never had
           // its own copy, so pressing "/" while a Drive tab had focus did
@@ -660,11 +684,9 @@ public class GDriveBrowseHandler implements HttpHandler {
     // Right-click menu for Drive cards. Reuses the same .context-menu /
     // .context-menu-item CSS already defined globally in Styles.java (the
     // same classes local browsing's PageScripts.java uses), so it looks
-    // identical. Read operations (Open, Open in new tab, Preview, Open
-    // Viewer, Download, Copy link, Refresh) are fully wired up; write
-    // operations (Rename, Move to..., Delete, New folder, Upload) are
-    // shown but disabled with a "read-only for now" tooltip, ready to be
-    // enabled once Drive write support exists.
+    // identical. Rename/Move to.../Delete/Duplicate/New folder are fully
+    // wired to POST /gdrive-ops (see GDriveOpsHandler.java); Upload is the
+    // one item still shown disabled - not implemented yet.
     static final String CONTEXT_MENU_SCRIPT =
         "<div id='gdriveContextMenu' class='context-menu'></div>" +
         "<div id='gdriveMovePrompt' class='gdrive-move-prompt'>" +

@@ -172,6 +172,57 @@ public class GDriveClient {
         return o instanceof String ? (String) o : null;
     }
 
+    // Extension -> the exact MIME type browsers actually expect for
+    // <video>/<audio>/<img> playback - used by GDriveDownloadHandler.java
+    // to override whatever Drive's own metadata reports for the file
+    // whenever the extension is one we recognize. Google Drive's reported
+    // mimeType for a given upload isn't always the canonical one a browser
+    // wants (uploads via different clients/OSes can land with a generic
+    // "application/octet-stream", a slightly different variant, or
+    // inconsistent casing) - a <video> element is far stricter about an
+    // exact Content-Type match than, say, a plain file download is, so a
+    // mismatch here is enough to silently fail playback for exactly one
+    // file type while a neighboring one (whose upload happened to get
+    // tagged correctly) works fine - which is exactly the kind of
+    // per-file, hard-to-reproduce inconsistency this maps around rather
+    // than trying to diagnose one specific account's Drive metadata.
+    private static final java.util.Map<String, String> EXTENSION_MIME_OVERRIDES = new java.util.HashMap<>();
+    static {
+        EXTENSION_MIME_OVERRIDES.put("mp4", "video/mp4");
+        EXTENSION_MIME_OVERRIDES.put("m4v", "video/mp4");
+        EXTENSION_MIME_OVERRIDES.put("mov", "video/quicktime");
+        EXTENSION_MIME_OVERRIDES.put("webm", "video/webm");
+        EXTENSION_MIME_OVERRIDES.put("mkv", "video/x-matroska");
+        EXTENSION_MIME_OVERRIDES.put("avi", "video/x-msvideo");
+        EXTENSION_MIME_OVERRIDES.put("mp3", "audio/mpeg");
+        EXTENSION_MIME_OVERRIDES.put("wav", "audio/wav");
+        EXTENSION_MIME_OVERRIDES.put("ogg", "audio/ogg");
+        EXTENSION_MIME_OVERRIDES.put("m4a", "audio/mp4");
+        EXTENSION_MIME_OVERRIDES.put("flac", "audio/flac");
+        EXTENSION_MIME_OVERRIDES.put("aac", "audio/aac");
+        EXTENSION_MIME_OVERRIDES.put("jpg", "image/jpeg");
+        EXTENSION_MIME_OVERRIDES.put("jpeg", "image/jpeg");
+        EXTENSION_MIME_OVERRIDES.put("png", "image/png");
+        EXTENSION_MIME_OVERRIDES.put("gif", "image/gif");
+        EXTENSION_MIME_OVERRIDES.put("webp", "image/webp");
+        EXTENSION_MIME_OVERRIDES.put("svg", "image/svg+xml");
+        EXTENSION_MIME_OVERRIDES.put("pdf", "application/pdf");
+    }
+
+    // Note this is deliberately NOT limited to only the "generic/missing"
+    // case - it always prefers the extension-based type when the extension
+    // is one we recognize, even over a Drive-reported mimeType that looks
+    // superficially plausible (e.g. "video/mpeg" instead of "video/mp4"),
+    // since browsers can be picky about the exact subtype for playback and
+    // the extension is the more reliable signal of what the file actually
+    // is.
+    public static String bestMimeForName(String reportedMime, String name) {
+        String ext = GridRenderer.getExtension(name == null ? "" : name).toLowerCase();
+        String override = EXTENSION_MIME_OVERRIDES.get(ext);
+        if (override != null) return override;
+        return (reportedMime == null || reportedMime.isEmpty()) ? "application/octet-stream" : reportedMime;
+    }
+
     // Creates a new, empty folder directly under parentId (typically
     // "root") and returns its new Drive-assigned id.
     public static String createFolder(String accountId, String parentId, String name) throws IOException {

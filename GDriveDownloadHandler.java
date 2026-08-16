@@ -79,7 +79,7 @@ public class GDriveDownloadHandler implements HttpHandler {
         }
 
         String fileName = meta.name != null ? meta.name : "download";
-        String mime = meta.mimeType != null ? meta.mimeType : "application/octet-stream";
+        String mime = GDriveClient.bestMimeForName(meta.mimeType, fileName);
 
         // Buffered rather than streamed straight to the response, because
         // com.sun.net.httpserver needs a known Content-Length (or chunked
