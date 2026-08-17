@@ -27,13 +27,33 @@ public class GDriveClient {
         return FOLDER_MIME.equals(mimeType);
     }
 
-    // Native Google Docs/Sheets/Slides/etc. have no raw bytes to download -
-    // they'd need the separate /export endpoint (with a target mime type
-    // chosen up front), which this first, read-mostly pass doesn't
-    // implement. They're still browsable and "Open in Drive" always works
-    // for them; only the Download link is hidden.
+    // Native Google Docs/Sheets/Slides/Drawings have no raw bytes to
+    // download directly - but they DO support Drive API's separate
+    // /export endpoint (a server-side conversion to a real file format,
+    // picked up front - see exportMimeFor() below). Google Forms are the
+    // one native type that endpoint doesn't support at all; those still
+    // fall back to "Open in Drive" only (see isExportable() below).
     public static boolean isNativeGoogleDoc(String mimeType) {
         return mimeType != null && mimeType.startsWith(NATIVE_DOC_PREFIX) && !isFolder(mimeType);
+    }
+
+    // Whether exportFile() below actually has somewhere to send this type -
+    // Docs/Sheets/Slides/Drawings all convert cleanly to PDF; Forms don't
+    // (Drive's /export endpoint returns 403 for them - there's no static
+    // "rendering" of a Form's live response-collecting UI to export).
+    public static boolean isExportable(String mimeType) {
+        return exportMimeFor(mimeType) != null;
+    }
+
+    // Public so callers (GDriveExportHandler) know what target format to
+    // ask exportFile() for without duplicating this table themselves.
+    public static String exportMimeFor(String mimeType) {
+        if (mimeType == null) return null;
+        if (mimeType.endsWith(".document") || mimeType.endsWith(".spreadsheet")
+                || mimeType.endsWith(".presentation") || mimeType.endsWith(".drawing")) {
+            return "application/pdf";
+        }
+        return null;
     }
 
     public static class DriveItem {
@@ -119,6 +139,46 @@ public class GDriveClient {
         int status = conn.getResponseCode();
         if (status < 200 || status >= 300) {
             throw new IOException("Google Drive returned HTTP " + status + " while downloading this file.");
+        }
+        try (InputStream is = conn.getInputStream()) {
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = is.read(buf)) != -1) dest.write(buf, 0, n);
+        }
+    }
+
+    // Server-side conversion of a native Google Doc/Sheet/Slide/Drawing to
+    // a real file (currently always PDF - see exportMimeFor() above),
+    // fetched with this app's own stored OAuth token exactly the way
+    // streamFile() fetches a regular file's bytes.
+    //
+    // This is what makes previewing one of these files independent of
+    // whichever Google account happens to be logged into the *browser* -
+    // Google's own embeddable "/preview" iframe (the old approach, still
+    // used as a fallback - see GDriveViewerHandler.java) authenticates
+    // using the browser's own accounts.google.com cookies for whatever
+    // profile it's running in, which has nothing to do with which account
+    // this server has an OAuth connection to. On a machine/profile with a
+    // different (or no) Google session signed in, that iframe either shows
+    // the wrong account's "no access" page or prompts a real sign-in -
+    // regardless of this app being correctly connected to the right
+    // account the whole time. Exporting server-side and streaming the
+    // resulting PDF back like any other file sidesteps that mismatch
+    // entirely, the same way GDriveDownloadHandler and the image-thumbnail
+    // path already avoid it (see GDriveBrowseHandler.fileCard()'s comment
+    // on thumbnailLink).
+    public static void exportFile(String accountId, String fileId, String exportMimeType, OutputStream dest) throws IOException {
+        String token = GDriveAuth.getValidAccessToken(accountId);
+        String url = "https://www.googleapis.com/drive/v3/files/" + urlEncode(fileId)
+            + "/export?mimeType=" + urlEncode(exportMimeType);
+        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        conn.setRequestMethod("GET");
+        conn.setRequestProperty("Authorization", "Bearer " + token);
+        conn.setConnectTimeout(15000);
+        conn.setReadTimeout(60000);
+        int status = conn.getResponseCode();
+        if (status < 200 || status >= 300) {
+            throw new IOException("Google Drive returned HTTP " + status + " while exporting this file.");
         }
         try (InputStream is = conn.getInputStream()) {
             byte[] buf = new byte[8192];

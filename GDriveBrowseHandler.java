@@ -207,7 +207,7 @@ public class GDriveBrowseHandler implements HttpHandler {
                     if (GDriveClient.isFolder(item.mimeType)) {
                         sb.append(folderCard(crumbs, item, acctQS, currentFolderId));
                     } else {
-                        sb.append(fileCard(item, acctQS, currentFolderId, accountId));
+                        sb.append(fileCard(item, acctQS, currentFolderId));
                     }
                 }
                 if (items.isEmpty()) {
@@ -323,31 +323,10 @@ public class GDriveBrowseHandler implements HttpHandler {
     // /gdrive-viewer tab. "Open"/"Open in new tab" still use the original
     // webViewLink so editing still works there.
     static String embeddablePreviewUrl(String webViewLink) {
-        return embeddablePreviewUrl(webViewLink, null);
-    }
-
-    // Overload that pins the iframe to a specific Google identity via the
-    // documented "authuser" query param, keyed by the connected account's
-    // own email rather than a Google-assigned session index (Google accepts
-    // either). Without this, docs.google.com/sheets.google.com/etc. decide
-    // which of the browser's *own* logged-in Google sessions to render with
-    // using their own last-active heuristic - which has nothing to do with
-    // which account this app's OAuth token belongs to, since the iframe is
-    // a direct request to Google's domain, not something proxied through
-    // this server. If the browser has no session at all for this email
-    // (most common case: a fresh browser profile that's only ever been
-    // signed into a different Google account), Google will show its own
-    // account-chooser/sign-in prompt inside the iframe regardless of this
-    // param - that's a browser-level Google session gap this app has no way
-    // to close on its own, only to disambiguate once it's been closed by
-    // signing into that email in this same browser profile.
-    static String embeddablePreviewUrl(String webViewLink, String accountEmail) {
         if (webViewLink == null) return null;
         int editIdx = webViewLink.indexOf("/edit");
-        String base = editIdx != -1 ? webViewLink.substring(0, editIdx) + "/preview" : webViewLink;
-        if (accountEmail == null || accountEmail.trim().isEmpty()) return base;
-        String sep = base.contains("?") ? "&" : "?";
-        return base + sep + "authuser=" + PathUtil.urlEncode(accountEmail);
+        if (editIdx != -1) return webViewLink.substring(0, editIdx) + "/preview";
+        return webViewLink;
     }
 
     private String folderCard(List<Crumb> crumbs, GDriveClient.DriveItem item, String acctQS, String parentId) {
@@ -384,15 +363,6 @@ public class GDriveBrowseHandler implements HttpHandler {
     }
 
     static String fileCard(GDriveClient.DriveItem item, String acctQS, String parentId) {
-        return fileCard(item, acctQS, parentId, null);
-    }
-
-    // accountId lets a native-doc card's preview iframe pin itself to the
-    // right Google identity (see embeddablePreviewUrl()'s comment) - null
-    // is fine for callers (like search hits) where that lookup isn't worth
-    // threading through, it just means Google falls back to its own
-    // browser-session-based default for that card's preview.
-    static String fileCard(GDriveClient.DriveItem item, String acctQS, String parentId, String accountId) {
         String name = PathUtil.htmlEscape(item.name);
         boolean nativeDoc = GDriveClient.isNativeGoogleDoc(item.mimeType);
         String category = categoryFor(item.mimeType, item.name);
@@ -402,16 +372,23 @@ public class GDriveBrowseHandler implements HttpHandler {
         boolean textlike = isTextLike(item.mimeType, item.name);
         String mime = item.mimeType == null ? "" : item.mimeType;
 
-        String accountEmail = null;
-        if (accountId != null) {
-            GDriveAuth.AccountInfo info = GDriveAuth.getAccountInfo(accountId);
-            if (info != null) accountEmail = info.email;
-        }
-
         String downloadUrl = nativeDoc ? "" : "/gdrive-file?id=" + PathUtil.urlEncode(item.id)
               + "&name=" + PathUtil.urlEncode(item.name) + "&mime=" + PathUtil.urlEncode(mime) + acctQS;
-        String viewUrl = nativeDoc ? embeddablePreviewUrl(item.webViewLink, accountEmail)
+        String exportUrl = nativeDoc && GDriveClient.isExportable(item.mimeType)
+              ? "/gdrive-export?id=" + PathUtil.urlEncode(item.id) + "&name=" + PathUtil.urlEncode(item.name)
+                    + "&mime=" + PathUtil.urlEncode(mime) + acctQS
+              : null;
+        // Native Docs/Sheets/Slides/Drawings preview and download via the
+        // server-side PDF export (GDriveExportHandler) rather than Google's
+        // own embeddable "/preview" iframe - see GDriveClient.exportFile()'s
+        // comment for why. Forms are the one native type export doesn't
+        // support, so those still fall back to the old iframe, which does
+        // at least work whenever the browser's own Google session happens
+        // to already match the connected account.
+        String viewUrl = nativeDoc
+              ? (exportUrl != null ? exportUrl + "&mode=view" : embeddablePreviewUrl(item.webViewLink))
               : (downloadUrl.isEmpty() ? "" : downloadUrl + "&mode=view");
+        if (nativeDoc && exportUrl != null) downloadUrl = exportUrl + "&mode=download";
 
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"card file\" data-gdrive-id=\"").append(PathUtil.htmlEscape(item.id))

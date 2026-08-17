@@ -97,7 +97,7 @@ public class GDriveSearchHandler implements HttpHandler {
                                 PathUtil.urlEncode(item.id) + "%7C" + PathUtil.urlEncode(item.name),
                                 item.name, item.id, item.webViewLink, acctQS, null));
                         } else {
-                            sb.append(GDriveBrowseHandler.fileCard(item, acctQS, null, accountId));
+                            sb.append(GDriveBrowseHandler.fileCard(item, acctQS, null));
                         }
                     }
                     sb.append("</div>");

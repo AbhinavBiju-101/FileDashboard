@@ -78,6 +78,7 @@ public class FileServer {
         addContext(server, "/gauth/callback", gAuth);
         addContext(server, "/gdrive", new GDriveBrowseHandler());
         addContext(server, "/gdrive-file", new GDriveDownloadHandler());
+        addContext(server, "/gdrive-export", new GDriveExportHandler());
         addContext(server, "/gdrive-search", new GDriveSearchHandler());
         addContext(server, "/gdrive-suggest", new GDriveSuggestHandler());
         addContext(server, "/gdrive-viewer", new GDriveViewerHandler());

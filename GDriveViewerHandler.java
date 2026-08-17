@@ -89,15 +89,22 @@ public class GDriveViewerHandler implements HttpHandler {
             } catch (IOException ignored) {}
         }
 
-        String downloadUrl = isNative ? null : "/gdrive-file?id=" + PathUtil.urlEncode(id)
-              + "&name=" + PathUtil.urlEncode(name) + "&mime=" + PathUtil.urlEncode(mime) + acctQS;
-        String accountEmail = null;
-        if (isNative) {
-            GDriveAuth.AccountInfo info = GDriveAuth.getAccountInfo(accountId);
-            if (info != null) accountEmail = info.email;
-        }
-        String viewUrl = isNative ? GDriveBrowseHandler.embeddablePreviewUrl(webViewLink, accountEmail)
-              : (downloadUrl + "&mode=view");
+        String exportUrl = isNative && GDriveClient.isExportable(mime)
+              ? "/gdrive-export?id=" + PathUtil.urlEncode(id) + "&name=" + PathUtil.urlEncode(name)
+                    + "&mime=" + PathUtil.urlEncode(mime) + acctQS
+              : null;
+        // Same reasoning as GDriveBrowseHandler.fileCard(): prefer the
+        // server-side PDF export over Google's own embeddable "/preview"
+        // iframe whenever the type supports it (everything native except
+        // Forms), since the export path works regardless of which Google
+        // account the browser itself happens to be signed into.
+        String downloadUrl = isNative
+              ? exportUrl
+              : "/gdrive-file?id=" + PathUtil.urlEncode(id) + "&name=" + PathUtil.urlEncode(name) + "&mime=" + PathUtil.urlEncode(mime) + acctQS;
+        if (isNative && downloadUrl != null) downloadUrl = downloadUrl + "&mode=download";
+        String viewUrl = isNative
+              ? (exportUrl != null ? exportUrl + "&mode=view" : GDriveBrowseHandler.embeddablePreviewUrl(webViewLink))
+              : ("/gdrive-file?id=" + PathUtil.urlEncode(id) + "&name=" + PathUtil.urlEncode(name) + "&mime=" + PathUtil.urlEncode(mime) + acctQS + "&mode=view");
 
         // Fetched right here, server-side, the same way GDriveDownloadHandler
         // does for a plain download - not left to a client-side fetch() the
