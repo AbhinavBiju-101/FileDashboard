@@ -174,16 +174,26 @@ public class SettingsHandler implements HttpHandler {
         // Autostart
         sb.append("<div class='settings-section'>");
         sb.append("<h2>Start automatically at login</h2>");
-        if (AutostartManager.isWindows()) {
+        if (AutostartManager.isSupported()) {
             boolean enabled = AutostartManager.isEnabled();
+            String mechanism = AutostartManager.isLinux()
+                ? "a systemd --user unit (~/.config/systemd/user/filedashboard.service)"
+                : "a per-user Windows Registry Run key entry";
+            sb.append("<p class='settings-desc'>Uses ").append(mechanism).append(" - the same one the ")
+              .append(AutostartManager.isLinux() ? "install-autostart.sh" : "install-autostart.bat")
+              .append(" script sets up.</p>");
             sb.append("<p class='settings-desc'>Currently: <strong>").append(enabled ? "Enabled" : "Disabled").append("</strong></p>");
             sb.append("<form method='POST' action='/settings' class='settings-form'>");
             sb.append("<input type='hidden' name='action' value='").append(enabled ? "disable-autostart" : "enable-autostart").append("'>");
             sb.append("<button type='submit'>").append(enabled ? "Disable autostart" : "Enable autostart").append("</button>");
             sb.append("</form>");
+            if (AutostartManager.isLinux()) {
+                sb.append("<p class='settings-hint'>This starts File Dashboard when you log in to your desktop session, same as the Windows version. ")
+                  .append("To have it start at boot even before anyone logs in, additionally run <code>loginctl enable-linger $USER</code> once from a terminal.</p>");
+            }
         } else {
-            sb.append("<p class='settings-desc'>Autostart management here is only available on Windows. ")
-              .append("On other platforms, use your OS's own startup tools (e.g. a systemd user service on Linux, a Login Item on macOS).</p>");
+            sb.append("<p class='settings-desc'>Autostart management here is only available on Windows and Linux. ")
+              .append("On macOS, use a Login Item pointed at <code>java -jar FileDashboard.jar</code> instead.</p>");
         }
         sb.append("</div>");
 

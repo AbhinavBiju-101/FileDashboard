@@ -60,7 +60,7 @@ Please build it for real and click through these before trusting them.
 
       **This has not been connected to a real Google account even once** -
       no network access to any google.com domain existed anywhere in this
-      session, so beyond `node --che ck` on the JS and careful line-by-line
+      session, so beyond `node --check` on the JS and careful line-by-line
       review of the Java, none of the actual OAuth exchange, token refresh,
       or Drive API JSON parsing has been exercised. Before trusting it:
       create a real Google Cloud OAuth client (Settings has the exact

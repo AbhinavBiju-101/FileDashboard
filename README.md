@@ -77,8 +77,9 @@ removing them immediately. Restore any time, or empty the bin permanently.
 Open via the sidebar. Currently configurable:
 - **Home folder** — override which folder "Home" opens and browsing is
   scoped to, without editing `Config.java` or recompiling.
-- **Autostart at login** (Windows) — toggle directly from the page; wraps
-  the same Scheduled Task mechanism as `install-autostart.bat`.
+- **Autostart at login** (Windows and Linux) — toggle directly from the
+  page; wraps the same mechanism as `install-autostart.bat`/`.sh` (a
+  Registry Run key on Windows, a `systemd --user` unit on Linux).
 - **Dashboard limits** — max items per Dashboard section.
 - **Live folder refresh** — turn the per-tab auto-refresh on/off.
 
@@ -86,18 +87,52 @@ Ideas for more settings (listed on the page, not yet built): dark mode,
 default sort order, thumbnail size, in-UI access token management,
 Recycle Bin auto-purge, default upload folder, port number.
 
-## Running as a jar, and autostarting on Windows
+## Running as a jar, and autostarting at login
+
+Works the same way on Windows and Linux - pick the script set for your OS.
+The Java code itself is already cross-platform (`com.sun.net.httpserver`,
+no OS-specific APIs outside `AutostartManager`/`RevealHandler`, which each
+branch on `os.name` internally), so the same `FileDashboard.jar` runs on
+either.
+
+### Windows
 
 1. **`build-jar.bat`** — compiles and packages `FileDashboard.jar`. (Or in
    BlueJ: *Project → Create Jar File*, `FileServer` as main class.)
-2. **`install-autostart.bat`** — registers a per-user logon Scheduled Task
+2. **`install-autostart.bat`** — adds a per-user Registry Run key entry
    (`javaw`, no console window), starts it immediately too. No admin needed.
-3. Toggle it later from the Settings page, or with `uninstall-autostart.bat`.
-4. **`stop.bat`** stops whatever's listening on port 8080.
+3. **`uninstall-autostart.bat`** removes that entry. **`stop.bat`** stops
+   whatever's listening on port 8080.
+4. **`start.bat`** does all of the above in one go: stops any copy that's
+   already running, rebuilds the jar, and (re)installs+starts autostart.
+   Safe to run again any time you've pulled/changed code - each run replaces
+   the previously running copy with a freshly built one rather than leaving
+   a stale jar running alongside a new one.
 
 Logging goes to `~/.filedashboard/server.log` in addition to any console,
 since a `javaw`-launched process has none. Launching a second copy while one
 is already running is detected and reported cleanly rather than crashing.
+
+### Linux
+
+1. **`./build-jar.sh`** — compiles and packages `FileDashboard.jar`. Needs a
+   JDK on your `PATH` (e.g. `sudo apt install default-jdk`).
+2. **`./install-autostart.sh`** — writes a `systemd --user` unit to
+   `~/.config/systemd/user/filedashboard.service`, enables it, and starts it
+   immediately. No root/`sudo` needed - this is a per-user unit, the direct
+   equivalent of the Windows Run key: it starts when *you* log in to your
+   desktop session, not system-wide at boot. If you want it running even
+   before anyone logs in (e.g. a headless box), additionally run once:
+   `loginctl enable-linger $USER`.
+3. **`./uninstall-autostart.sh`** stops and removes that unit.
+   **`./stop.sh`** stops a running copy (via `systemctl --user stop` if it's
+   running as the service, otherwise by finding the process on port 8080).
+4. **`./start.sh`** does all of the above in one go, same as `start.bat` on
+   Windows: stops any running copy, rebuilds, and (re)installs+starts
+   autostart. Safe to re-run any time.
+
+All `.sh` scripts are already executable in this zip; if that doesn't
+survive your transfer method, `chmod +x *.sh` once.
 
 ## Setup (BlueJ / from source)
 
@@ -127,10 +162,12 @@ is already running is detected and reported cleanly rather than crashing.
   everywhere consistently (sidebar shortcuts, search, zip, trash restore,
   not just the security boundary).
 - **Autostart from Settings** (`AutostartManager.java`) - wraps the same
-  `schtasks` commands as the `.bat` scripts via `ProcessBuilder`, finding its
+  mechanism the shell scripts use via `ProcessBuilder`: `reg add`/`reg query`
+  on Windows, `systemctl --user` + a generated unit file on Linux. Finds its
   own jar path through `getProtectionDomain().getCodeSource()` (the standard
-  "where am I actually running from" technique in Java) and live-querying
-  Task Scheduler rather than trusting a possibly-stale stored flag.
+  "where am I actually running from" technique in Java) and live-queries the
+  OS (registry / systemd) rather than trusting a possibly-stale stored flag,
+  on both platforms.
 - **Address bar** (`ShellScript.java`) - pressing `/` works from inside any
   tab's iframe via `parent.openAddressBar()`, guarded against hijacking
   normal typing in text inputs. Typed paths get the current root's absolute
@@ -159,7 +196,7 @@ is already running is detected and reported cleanly rather than crashing.
 | `FileServer.java` | Entry point — thread pool, routes, startup logging |
 | `Config.java` | Compile-time defaults (root, port, data/trash locations) |
 | `Settings.java` | Runtime-configurable overrides, persisted |
-| `AutostartManager.java` | Windows Scheduled Task management via `schtasks` |
+| `AutostartManager.java` | Autostart management - Registry Run key (Windows) or `systemd --user` (Linux) |
 | `AppShellHandler.java` / `ShellScript.java` | Main window: sidebar, tabs, address bar |
 | `SidebarRenderer.java` | Pinned sidebar; navigates current tab |
 | `HomeHandler.java` | Dashboard: frequency-ranked, scrollable, capped (`/dashboard`) |
@@ -185,7 +222,8 @@ is already running is detected and reported cleanly rather than crashing.
 | `AuthFilter.java` | Optional shared-token gate on every route |
 | `Styles.java` | All CSS |
 | `QueryUtil.java` | Query-string parsing helper |
-| `build-jar.bat` / `install-autostart.bat` / `uninstall-autostart.bat` / `stop.bat` | Windows tooling |
+| `build-jar.bat` / `install-autostart.bat` / `uninstall-autostart.bat` / `stop.bat` / `start.bat` | Windows tooling |
+| `build-jar.sh` / `install-autostart.sh` / `uninstall-autostart.sh` / `stop.sh` / `start.sh` | Linux tooling |
 
 ## Notes / limitations
 

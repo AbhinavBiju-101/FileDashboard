@@ -11,7 +11,7 @@ for /f "tokens=5" %%P in ('netstat -aon ^| findstr ":%PORT% " ^| findstr "LISTEN
 if not defined FOUND (
     echo Nothing appears to be listening on port %PORT% - File Dashboard isn't running.
     echo.
-    pause
+    if not defined FD_SILENT pause
     exit /b 0
 )
 
@@ -28,4 +28,4 @@ if errorlevel 1 (
     echo uninstall-autostart.bat to also remove the autostart entry.
 )
 echo.
-pause
+if not defined FD_SILENT pause

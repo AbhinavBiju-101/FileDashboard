@@ -23,7 +23,7 @@ if %COMPILE_RESULT% neq 0 (
     echo *** Compilation failed. Fix the errors above and run this again. ***
     echo.
     popd
-    pause
+    if not defined FD_SILENT pause
     exit /b 1
 )
 
@@ -39,7 +39,7 @@ if not exist FileDashboard.jar (
     echo *** Something went wrong - FileDashboard.jar was not created. ***
     echo.
     popd
-    pause
+    if not defined FD_SILENT pause
     exit /b 1
 )
 
@@ -56,4 +56,4 @@ echo To have it start automatically when you log in, run install-autostart.bat
 echo (it will find and use this jar automatically).
 echo.
 popd
-pause
+if not defined FD_SILENT pause

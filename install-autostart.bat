@@ -18,7 +18,7 @@ if not exist "%JARPATH%" (
     echo Run build-jar.bat first, then try this again.
     echo.
     popd
-    pause
+    if not defined FD_SILENT pause
     exit /b 1
 )
 
@@ -35,7 +35,7 @@ if not defined JAVAW (
     echo then run this script again.
     echo.
     popd
-    pause
+    if not defined FD_SILENT pause
     exit /b 1
 )
 
@@ -55,7 +55,7 @@ if errorlevel 1 (
     echo *** Something went wrong writing to the registry. See the error above. ***
     echo.
     popd
-    pause
+    if not defined FD_SILENT pause
     exit /b 1
 )
 
@@ -75,4 +75,4 @@ echo To remove the autostart entry later, run uninstall-autostart.bat.
 echo To stop a currently-running instance without removing autostart, run stop.bat.
 echo.
 popd
-pause
+if not defined FD_SILENT pause
