@@ -52,12 +52,18 @@ public class SessionsHandler implements HttpHandler {
         sb.append("<p class='session-intro'>Every new browser tab you open on File Dashboard starts its own session - ")
           .append("its own set of tabs, kept separate from whatever else you have open. A session can only be open in ")
           .append("one browser tab at a time, so reopening one below moves it here (or, if it's open somewhere else, ")
-          .append("\"Close &amp; open here\" closes it there first). Use \u2601 New Google Drive session below to start ")
-          .append("as many separate Drive-browsing sessions as you like, alongside your normal ones - connect an account ")
-          .append("from Settings first if you haven't yet.</p>");
+          .append("\"Close &amp; open here\" closes it there first).");
+        if (Settings.isGdriveExperimentalEnabled()) {
+            sb.append(" Use \u2601 New Google Drive session below to start ")
+              .append("as many separate Drive-browsing sessions as you like, alongside your normal ones - connect an account ")
+              .append("from Settings first if you haven't yet.");
+        }
+        sb.append("</p>");
 
-        sb.append("<button id='newDriveSessionBtn' class='session-btn session-btn-primary session-new-drive-btn' onclick='createDriveSession()'>")
-          .append("<img src='").append(DriveIcon.DATA_URI).append("' width='14' height='14' alt=''> New Google Drive session</button>");
+        if (Settings.isGdriveExperimentalEnabled()) {
+            sb.append("<button id='newDriveSessionBtn' class='session-btn session-btn-primary session-new-drive-btn' onclick='createDriveSession()'>")
+              .append("<img src='").append(DriveIcon.DATA_URI).append("' width='14' height='14' alt=''> New Google Drive session</button>");
+        }
 
         sb.append("<div class='session-filter-bar'>");
         sb.append("<input type='text' id='sessionSearchInput' class='session-filter-input' placeholder='Search sessions by name...'>");

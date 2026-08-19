@@ -7,21 +7,35 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
- * If Config.ACCESS_TOKEN is set, every request must carry a matching
- * "?token=..." query param (once) or a "dash_token" cookie (set automatically
- * after the first successful token check) - otherwise the request is
- * rejected with 401. If ACCESS_TOKEN is null, this filter is a no-op.
+ * Gates every request behind an access token whenever the server is
+ * actually reachable from outside this machine - see FileServer.java's
+ * bind address, which is loopback-only unless Settings.isNetworkAccessEnabled()
+ * is on. In loopback-only mode (the default), nothing but this machine can
+ * open a socket to the server in the first place, so a token would just be
+ * friction with no attacker it actually stops - this filter is a no-op
+ * then. The moment network access is turned on, a token becomes mandatory,
+ * automatically, with no way to have one without the other (see
+ * Settings.setNetworkAccessEnabled()) - there's no "reachable from the
+ * whole network with no password" state reachable from the Settings UI.
+ *
+ * Config.ACCESS_TOKEN still works as a manual override for anyone who'd
+ * rather hardcode a fixed token at compile time instead of the generated
+ * one in Settings - if set, it takes priority.
+ *
+ * Checks a "?token=..." query param (once) or a "dash_token" cookie (set
+ * automatically after the first successful token check).
  */
 public class AuthFilter extends Filter {
 
     @Override
     public String description() {
-        return "Optional shared-token auth filter";
+        return "Access-token auth filter, required whenever network access is enabled";
     }
 
     @Override
     public void doFilter(HttpExchange exchange, Chain chain) throws IOException {
-        if (Config.ACCESS_TOKEN == null || Config.ACCESS_TOKEN.isEmpty()) {
+        String required = requiredToken();
+        if (required == null || required.isEmpty()) {
             chain.doFilter(exchange);
             return;
         }
@@ -30,9 +44,9 @@ public class AuthFilter extends Filter {
         String tokenParam = QueryUtil.getParam(query, "token");
         String cookieToken = getCookie(exchange, "dash_token");
 
-        if (Config.ACCESS_TOKEN.equals(tokenParam) || Config.ACCESS_TOKEN.equals(cookieToken)) {
+        if (required.equals(tokenParam) || required.equals(cookieToken)) {
             if (tokenParam != null) {
-                exchange.getResponseHeaders().add("Set-Cookie", "dash_token=" + Config.ACCESS_TOKEN + "; Path=/; HttpOnly");
+                exchange.getResponseHeaders().add("Set-Cookie", "dash_token=" + required + "; Path=/; HttpOnly");
             }
             chain.doFilter(exchange);
             return;
@@ -48,6 +62,15 @@ public class AuthFilter extends Filter {
         try (OutputStream os = exchange.getResponseBody()) {
             os.write(bytes);
         }
+    }
+
+    // Config.ACCESS_TOKEN (manual override) wins if set; otherwise a token
+    // is required exactly when network access is on, using whatever's in
+    // Settings (auto-generated the moment that got turned on - see
+    // Settings.setNetworkAccessEnabled()).
+    private String requiredToken() {
+        if (Config.ACCESS_TOKEN != null && !Config.ACCESS_TOKEN.isEmpty()) return Config.ACCESS_TOKEN;
+        return Settings.isNetworkAccessEnabled() ? Settings.getAccessToken() : null;
     }
 
     private String getCookie(HttpExchange exchange, String name) {

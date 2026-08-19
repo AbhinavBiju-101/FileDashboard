@@ -105,6 +105,10 @@ public class GDriveViewerHandler implements HttpHandler {
         String viewUrl = isNative
               ? (exportUrl != null ? exportUrl + "&mode=view" : GDriveBrowseHandler.embeddablePreviewUrl(webViewLink))
               : ("/gdrive-file?id=" + PathUtil.urlEncode(id) + "&name=" + PathUtil.urlEncode(name) + "&mime=" + PathUtil.urlEncode(mime) + acctQS + "&mode=view");
+        // Only set when there's actually a second view to switch to - see
+        // GDriveBrowseHandler.fileCard()'s comment on the same computation
+        // for the preview modal.
+        String googleViewUrl = (isNative && exportUrl != null) ? GDriveBrowseHandler.embeddablePreviewUrl(webViewLink) : null;
 
         // Fetched right here, server-side, the same way GDriveDownloadHandler
         // does for a plain download - not left to a client-side fetch() the
@@ -149,11 +153,14 @@ public class GDriveViewerHandler implements HttpHandler {
         if (isCode && textContent != null) {
             sb.append("<a href=\"#\" onclick=\"toggleGDriveCodeView(); return false;\" id='toggleRawBtn'>Show raw text</a>");
         }
+        if (googleViewUrl != null) {
+            sb.append("<a href=\"#\" onclick=\"toggleGDriveViewerGoogleView(); return false;\" id='toggleGoogleViewBtn'>Google view</a>");
+        }
         sb.append("</div></div>");
 
         sb.append("<div class='viewer-content' id='gdriveViewerContent'>");
         if (isNative) {
-            sb.append("<iframe class='viewer-pdf-frame' src='").append(PathUtil.htmlEscape(viewUrl)).append("'></iframe>");
+            sb.append("<iframe class='viewer-pdf-frame' id='gdriveViewerFrame' src='").append(PathUtil.htmlEscape(viewUrl)).append("'></iframe>");
         } else if (isPdf) {
             sb.append("<iframe class='viewer-pdf-frame' src='").append(PathUtil.htmlEscape(viewUrl)).append("'></iframe>");
         } else if (isDocx) {
@@ -217,6 +224,24 @@ public class GDriveViewerHandler implements HttpHandler {
             sb.append("var showingRaw=r.style.display!=='none';");
             sb.append("if(showingRaw){ r.style.display='none'; h.style.display=''; b.textContent='Show raw text'; }");
             sb.append("else{ r.style.display=''; h.style.display='none'; b.textContent='Show formatted'; }");
+            sb.append("}");
+            sb.append("</script>");
+        }
+        if (googleViewUrl != null) {
+            // Same relabel-the-button mechanic as toggleGDriveCodeView()
+            // above, swapping the iframe's src between the server-side PDF
+            // export (default) and Google's own embeddable "/preview"
+            // iframe instead of toggling two elements' visibility - see
+            // GDriveBrowseHandler.fileCard()'s comment on why PDF is the
+            // default now.
+            sb.append("<script>");
+            sb.append("var gdriveViewerPdfUrl=").append(jsString(viewUrl)).append(", gdriveViewerGoogleUrl=").append(jsString(googleViewUrl)).append(", gdriveViewerShowingGoogle=false;");
+            sb.append("function toggleGDriveViewerGoogleView(){");
+            sb.append("var frame=document.getElementById('gdriveViewerFrame'), b=document.getElementById('toggleGoogleViewBtn');");
+            sb.append("if(!frame) return;");
+            sb.append("gdriveViewerShowingGoogle=!gdriveViewerShowingGoogle;");
+            sb.append("frame.src=gdriveViewerShowingGoogle?gdriveViewerGoogleUrl:gdriveViewerPdfUrl;");
+            sb.append("b.textContent=gdriveViewerShowingGoogle?'PDF view':'Google view';");
             sb.append("}");
             sb.append("</script>");
         }

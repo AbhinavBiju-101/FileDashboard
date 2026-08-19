@@ -389,6 +389,14 @@ public class GDriveBrowseHandler implements HttpHandler {
               ? (exportUrl != null ? exportUrl + "&mode=view" : embeddablePreviewUrl(item.webViewLink))
               : (downloadUrl.isEmpty() ? "" : downloadUrl + "&mode=view");
         if (nativeDoc && exportUrl != null) downloadUrl = exportUrl + "&mode=download";
+        // Only set when there's an actual second view to toggle to: native
+        // + exportable means viewUrl above is already the PDF export, so
+        // this is the *other* one (Google's own iframe) for the toggle
+        // button to switch to and back. Left empty for Forms (not
+        // exportable - viewUrl is already Google's iframe, nothing to
+        // toggle to) and for everything non-native (no such thing as a
+        // "Google view" of a plain file).
+        String googleViewUrl = (nativeDoc && exportUrl != null) ? embeddablePreviewUrl(item.webViewLink) : null;
 
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"card file\" data-gdrive-id=\"").append(PathUtil.htmlEscape(item.id))
@@ -401,6 +409,7 @@ public class GDriveBrowseHandler implements HttpHandler {
           .append("\" data-gdrive-viewable=\"").append(viewable ? "1" : "0")
           .append("\" data-gdrive-textlike=\"").append(textlike ? "1" : "0")
           .append("\" data-gdrive-native=\"").append(nativeDoc ? "1" : "0")
+          .append("\" data-gdrive-googleviewurl=\"").append(googleViewUrl == null ? "" : PathUtil.htmlEscape(googleViewUrl))
           .append("\" data-gdrive-parentid=\"").append(parentId == null ? "" : PathUtil.htmlEscape(parentId))
           .append("\">");
 
@@ -565,6 +574,7 @@ public class GDriveBrowseHandler implements HttpHandler {
         "<span id='gdrivePreviewTitle' class='preview-title'></span>" +
         "<div class='preview-header-actions'>" +
         "<span id='gdrivePreviewViewerAction'></span>" +
+        "<span id='gdrivePreviewGoogleToggle'></span>" +
         "<a id='gdrivePreviewOpenLink' href='#' target='_blank' rel='noopener' class='preview-download'>Open</a>" +
         "<a id='gdrivePreviewDownloadLink' href='#' class='preview-download'>Download</a>" +
         "<button class='preview-close' onclick='closeGDrivePreview()' aria-label='Close'>&times;</button>" +
@@ -595,6 +605,7 @@ public class GDriveBrowseHandler implements HttpHandler {
           "var name=card.dataset.gdriveName, mime=card.dataset.gdriveMime, category=card.dataset.gdriveCategory;" +
           "var viewUrl=card.dataset.gdriveViewurl, downloadUrl=card.dataset.gdriveDownloadurl, webViewLink=card.dataset.gdriveWebviewlink;" +
           "var isNative=card.dataset.gdriveNative==='1';" +
+          "var googleViewUrl=card.dataset.gdriveGoogleviewurl||'';" +
           "var textlike=card.dataset.gdriveTextlike==='1';" +
           "var ext=gdriveExtOf(name);" +
           "document.getElementById('gdrivePreviewTitle').textContent=name;" +
@@ -608,8 +619,24 @@ public class GDriveBrowseHandler implements HttpHandler {
           "}else{ viewerAction.innerHTML=''; }" +
           "gdrivePreviewViewerHref='/gdrive-viewer?id='+encodeURIComponent(card.dataset.gdriveId)+'&name='+encodeURIComponent(name)+'&mime='+encodeURIComponent(mime||'')+gdriveAcctQS();" +
           "body.innerHTML='';" +
+          // Toggle button - same show/hide-and-relabel mechanic as
+          // toggleModalCodeView()'s "Raw text"/"Formatted" button just
+          // below, applied here to PDF-export-vs-Google's-own-iframe
+          // instead of highlighted-vs-raw code. Only rendered at all when
+          // googleViewUrl is actually set (see fileCard()'s comment on
+          // data-gdrive-googleviewurl) - i.e. only for native Docs/Sheets/
+          // Slides/Drawings, where there really are two views to switch
+          // between; nothing to toggle for Forms (already Google's iframe,
+          // no export exists) or any non-native file.
+          "var googleToggle=document.getElementById('gdrivePreviewGoogleToggle');" +
+          "if(isNative && googleViewUrl){" +
+            "googleToggle.innerHTML='<a href=\"#\" onclick=\"toggleGDrivePreviewGoogleView(); return false;\" id=\"gdrivePreviewGoogleToggleBtn\" class=\"preview-download\">Google view</a>';" +
+            "gdrivePreviewPdfUrl=viewUrl; gdrivePreviewGoogleUrl=googleViewUrl; gdrivePreviewShowingGoogle=false;" +
+          "}else{" +
+            "googleToggle.innerHTML=''; gdrivePreviewPdfUrl=null; gdrivePreviewGoogleUrl=null;" +
+          "}" +
           "if(isNative){" +
-            "body.innerHTML='<iframe src=\"'+viewUrl+'\"></iframe>';" +
+            "body.innerHTML='<iframe id=\"gdrivePreviewFrame\" src=\"'+viewUrl+'\"></iframe>';" +
           "}else if(category==='image'){" +
             "body.innerHTML='<img src=\"'+viewUrl+'\" alt=\"\">';" +
           "}else if(ext==='pdf'){" +
@@ -652,6 +679,7 @@ public class GDriveBrowseHandler implements HttpHandler {
         "}" +
         "var gdrivePreviewViewerHref='';" +
         "var currentGDrivePreviewId=null;" +
+        "var gdrivePreviewPdfUrl=null, gdrivePreviewGoogleUrl=null, gdrivePreviewShowingGoogle=false;" +
         // Same left/right cycling PageScripts.java's navigatePreview() does
         // for local files - restricted to previewable file cards (skips
         // folders, and anything currently hidden by CHIP_FILTER_SCRIPT's
@@ -674,6 +702,20 @@ public class GDriveBrowseHandler implements HttpHandler {
           "if(showingRaw){ r.style.display='none'; h.style.display=''; b.textContent='Raw text'; }" +
           "else{ r.style.display=''; h.style.display='none'; b.textContent='Formatted'; }" +
         "}" +
+        // Swaps the preview iframe's src between the server-side PDF
+        // export (default - see fileCard()'s comment on why that's the
+        // default now) and Google's own embeddable "/preview" iframe,
+        // which is what native-doc previews used to show exclusively
+        // before that change. Same relabel-the-button mechanic as
+        // toggleGDrivePreviewCodeView() just above, just swapping an
+        // iframe's src instead of two elements' visibility.
+        "function toggleGDrivePreviewGoogleView(){" +
+          "var frame=document.getElementById('gdrivePreviewFrame'), b=document.getElementById('gdrivePreviewGoogleToggleBtn');" +
+          "if(!frame||!gdrivePreviewPdfUrl||!gdrivePreviewGoogleUrl) return;" +
+          "gdrivePreviewShowingGoogle=!gdrivePreviewShowingGoogle;" +
+          "frame.src=gdrivePreviewShowingGoogle?gdrivePreviewGoogleUrl:gdrivePreviewPdfUrl;" +
+          "b.textContent=gdrivePreviewShowingGoogle?'PDF view':'Google view';" +
+        "}" +
         "function openGDrivePreviewInViewer(){" +
           "var nav=parent&&parent.navigateCurrentTab?parent.navigateCurrentTab:function(u){location.href=u;};" +
           "closeGDrivePreview();" +
@@ -683,6 +725,7 @@ public class GDriveBrowseHandler implements HttpHandler {
           "document.getElementById('gdrivePreviewOverlay').classList.remove('open');" +
           "document.getElementById('gdrivePreviewBody').innerHTML='';" +
           "currentGDrivePreviewId=null;" +
+          "gdrivePreviewPdfUrl=null; gdrivePreviewGoogleUrl=null; gdrivePreviewShowingGoogle=false;" +
         "}" +
         "document.addEventListener('keydown', function(e){" +
           "if(e.key==='Escape') closeGDrivePreview();" +

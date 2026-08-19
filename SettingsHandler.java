@@ -59,6 +59,22 @@ public class SettingsHandler implements HttpHandler {
             }
         } else if ("toggle-live-refresh".equals(action)) {
             Settings.setLiveRefreshEnabled(!Settings.isLiveRefreshEnabled());
+        } else if ("toggle-gdrive-experimental".equals(action)) {
+            Settings.setGdriveExperimentalEnabled(!Settings.isGdriveExperimentalEnabled());
+        } else if ("toggle-network-access".equals(action)) {
+            Settings.setNetworkAccessEnabled(!Settings.isNetworkAccessEnabled());
+            exchange.getResponseHeaders().set("Location", "/settings?msg=" +
+                PathUtil.urlEncode("Saved - restart File Dashboard for this to take effect."));
+            exchange.sendResponseHeaders(303, -1);
+            exchange.close();
+            return;
+        } else if ("regenerate-access-token".equals(action)) {
+            Settings.regenerateAccessToken();
+            exchange.getResponseHeaders().set("Location", "/settings?msg=" +
+                PathUtil.urlEncode("New token generated - restart File Dashboard for it to take effect."));
+            exchange.sendResponseHeaders(303, -1);
+            exchange.close();
+            return;
         } else if ("enable-autostart".equals(action)) {
             result = AutostartManager.enable();
         } else if ("disable-autostart".equals(action)) {
@@ -102,6 +118,42 @@ public class SettingsHandler implements HttpHandler {
 
         if (msg != null) sb.append("<div class='settings-flash ok'>").append(PathUtil.htmlEscape(msg)).append("</div>");
         if (err != null) sb.append("<div class='settings-flash err'>").append(PathUtil.htmlEscape(err)).append("</div>");
+
+        // Network Access - off by default. See FileServer.java: with this
+        // off, the server only ever binds to 127.0.0.1 (loopback), which
+        // means there's no network path to it from any other device at
+        // all, not "a password in front of an open door" but no door -
+        // the fix that actually matters on a shared network like a school
+        // or office. Turning it on is for the opposite, deliberate case:
+        // reaching your own dashboard from your own phone/tablet on your
+        // own home Wi-Fi.
+        boolean networked = Settings.isNetworkAccessEnabled();
+        sb.append("<div class='settings-section").append(networked ? " settings-section-warn" : "").append("'>");
+        sb.append("<h2>Network Access</h2>");
+        sb.append("<p class='settings-desc'>Off by default: this server only listens on this computer (127.0.0.1) - no other ")
+          .append("device can reach it, on any network, regardless of anyone knowing this machine's IP address. Turning this on makes it ")
+          .append("reachable from <strong>any device on the same network</strong> - fine on a home Wi-Fi you trust, risky on something ")
+          .append("shared like a school or office network, since anyone else on it could browse, edit, or delete your files too.</p>");
+        sb.append("<p class='settings-current'>Currently: <strong>").append(networked ? "On - reachable from this network" : "Off - this computer only").append("</strong></p>");
+        sb.append("<form method='POST' action='/settings' class='settings-form'>");
+        sb.append("<input type='hidden' name='action' value='toggle-network-access'>");
+        sb.append("<button type='submit'").append(networked ? " class='settings-btn-danger'" : "").append(">Turn ").append(networked ? "off" : "on").append("</button>");
+        sb.append("</form>");
+        if (networked) {
+            String token = Settings.getAccessToken();
+            String lanIp = FileServer.detectLanAddress();
+            sb.append("<p class='settings-hint'>An access token is required from any device other than this one - without it, requests are rejected outright, ")
+              .append("not just hidden behind a login page. Share this URL only with devices you actually want to have access:</p>");
+            sb.append("<p class='settings-current'><code>http://").append(lanIp != null ? PathUtil.htmlEscape(lanIp) : "this-computer's-LAN-IP")
+              .append(":").append(Config.PORT).append("/?token=").append(token != null ? PathUtil.htmlEscape(token) : "").append("</code></p>");
+            sb.append("<form method='POST' action='/settings' class='settings-form'>");
+            sb.append("<input type='hidden' name='action' value='regenerate-access-token'>");
+            sb.append("<button type='submit' class='settings-btn-subtle'>Regenerate token</button>");
+            sb.append("</form>");
+            sb.append("<p class='settings-hint'>Regenerating immediately invalidates the old one - every device using it will need the new URL, including this browser's own remembered access.</p>");
+        }
+        sb.append("<p class='settings-hint settings-hint-restart'>Changing this needs a restart of File Dashboard to take effect - the server picks its bind address once, at startup.</p>");
+        sb.append("</div>");
 
         // Home folder
         sb.append("<div class='settings-section'>");
@@ -164,16 +216,48 @@ public class SettingsHandler implements HttpHandler {
         // OAuth client-type requirement without actually reducing the
         // Google Cloud Console setup work, which is the same either way).
         //
-        // Any number of accounts can be connected side by side - each one
-        // shows up here as its own row with its own Disconnect button, and
-        // each can back any number of independent Google Drive sessions
-        // (see ShellScript.java's account picker, used when starting a new
-        // one from the Session Manager).
+        // Off by default and gated behind its own toggle: File Dashboard's
+        // actual point is browsing your own local files, zero-upload,
+        // nothing leaving the machine (see the project write-up) - Drive
+        // integration is a "well, it's the same shape of problem, might as
+        // well" bonus on top of that, not the point, so it stays out of
+        // the way entirely (sidebar, Session Manager, and every /gdrive*
+        // route itself via GDriveGateFilter - see FileServer.java) unless
+        // someone deliberately switches it on here.
+        boolean gdriveEnabled = Settings.isGdriveExperimentalEnabled();
         sb.append("<div class='settings-section'>");
-        sb.append("<h2>").append(DriveIcon.img(22)).append(" Google Drive</h2>");
-        sb.append("<p class='settings-desc'>Connect one or more Google accounts to browse their Drive files through the same card-grid UI as your local ")
-          .append("files, from their own Drive sessions in the <a href=\"/sessions\" onclick=\"if(parent&&parent.navigateCurrentTab){ parent.navigateCurrentTab('/sessions'); return false; }\">Session Manager</a>. ")
+        sb.append("<h2>").append(DriveIcon.img(22)).append(" Google Drive <span class='settings-tag settings-tag-experimental'>Experimental</span></h2>");
+        sb.append("<p class='settings-desc'>Browse a Google Drive account through the same card-grid UI as your local files. ")
+          .append("Off by default - this app's main job is local files; Drive support is a bonus on top of that, not the point.</p>");
+        sb.append("<form method='POST' action='/settings' class='settings-form'>");
+        sb.append("<input type='hidden' name='action' value='toggle-gdrive-experimental'>");
+        sb.append("<button type='submit'>Turn ").append(gdriveEnabled ? "off" : "on").append("</button>");
+        sb.append("</form>");
+
+        if (gdriveEnabled) {
+        sb.append("<p class='settings-desc' style='margin-top:14px;'>Connect one or more Google accounts to browse their Drive files, ")
+          .append("from their own Drive sessions in the <a href=\"/sessions\" onclick=\"if(parent&&parent.navigateCurrentTab){ parent.navigateCurrentTab('/sessions'); return false; }\">Session Manager</a>. ")
           .append("Read-only for now - browsing and downloading, no uploads/renames/deletes yet.</p>");
+
+        // "Request tester access" - see GDriveAccessRequestHandler.java's
+        // class comment for the whole story: this app's OAuth client is
+        // sitting in Google's "Testing" publishing status (unverified,
+        // manually-approved testers only, 100-slot cap), so this is the
+        // step before Connect actually works for anyone who isn't already
+        // on that list. Temporary by nature - goes away if/when the app
+        // either gets verified for production or moves to the Picker API +
+        // a narrower scope that doesn't need verification at all.
+        sb.append("<div class='settings-access-request'>");
+        sb.append("<p class='settings-desc' style='margin:0 0 8px;'><strong>Not added as a tester yet?</strong> This app's Google ")
+          .append("integration is still in Google's \"Testing\" stage while it's unverified - only up to 100 manually-approved ")
+          .append("Google accounts can connect at all. Enter the Google account email you'll be connecting with, and it'll ")
+          .append("open an email (via your own mail app) asking for tester access - nothing is sent automatically.</p>");
+        sb.append("<div class='settings-form settings-access-request-form'>");
+        sb.append("<input type='text' id='gdriveAccessEmail' placeholder='you@gmail.com'>");
+        sb.append("<button type='button' id='gdriveAccessRequestBtn'>Request access</button>");
+        sb.append("</div>");
+        sb.append("<p class='settings-hint' id='gdriveAccessRequestHint'></p>");
+        sb.append("</div>");
 
         java.util.List<GDriveAuth.AccountInfo> accounts = GDriveAuth.listAccounts();
         if (!accounts.isEmpty()) {
@@ -240,6 +324,7 @@ public class SettingsHandler implements HttpHandler {
               .append("window.open('/gauth/start','gdriveConnect','width=520,height=680,menubar=no,toolbar=no,location=yes,status=no,resizable=yes,scrollbars=yes');")
               .append("return false;\">").append(DriveIcon.img(16)).append(accounts.isEmpty() ? " Connect Google Drive \u2192" : " Add another Google account \u2192").append("</a></p>");
         }
+        } // end if (gdriveEnabled)
         sb.append("</div>");
 
         // Other settings ideas (not implemented, just documented)
@@ -250,7 +335,6 @@ public class SettingsHandler implements HttpHandler {
         sb.append("<li>Dark mode toggle</li>");
         sb.append("<li>Default sort order/field for new Browse tabs</li>");
         sb.append("<li>Thumbnail size / quality</li>");
-        sb.append("<li>View or rotate the access token from here instead of editing Config.java</li>");
         sb.append("<li>Auto-empty the Recycle Bin after N days</li>");
         sb.append("<li>Default upload destination</li>");
         sb.append("<li>Port number (would need a restart to take effect)</li>");
@@ -258,6 +342,38 @@ public class SettingsHandler implements HttpHandler {
         sb.append("</div>");
 
         sb.append("</div></div>");
+        if (gdriveEnabled) {
+            // Plain fetch() + a status line rather than a form POST/redirect,
+            // since there's nothing to persist server-side worth a full page
+            // reload over - see GDriveAccessRequestHandler.java for what
+            // actually happens with the email (a local log line, plus a
+            // mailto: link handed back for the visitor's own mail client to
+            // send - no SMTP anywhere in this app).
+            sb.append("<script>(function(){")
+              .append("var btn=document.getElementById('gdriveAccessRequestBtn');")
+              .append("if(!btn) return;")
+              .append("btn.addEventListener('click', function(){")
+                .append("var input=document.getElementById('gdriveAccessEmail');")
+                .append("var hint=document.getElementById('gdriveAccessRequestHint');")
+                .append("var email=(input.value||'').trim();")
+                .append("if(!email){ hint.textContent='Enter an email first.'; hint.className='settings-hint settings-hint-err'; return; }")
+                .append("btn.disabled=true; hint.textContent='...'; hint.className='settings-hint';")
+                .append("fetch('/gdrive-access-request',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},")
+                  .append("body:'email='+encodeURIComponent(email)})")
+                  .append(".then(function(r){return r.json().then(function(data){ return {status:r.status, data:data}; });})")
+                  .append(".then(function(res){")
+                    .append("btn.disabled=false;")
+                    .append("if(res.data && res.data.ok){")
+                      .append("hint.textContent='Opening your mail app...'; hint.className='settings-hint';")
+                      .append("window.location.href=res.data.mailto;")
+                    .append("}else{")
+                      .append("hint.textContent=(res.data&&res.data.error)||'Something went wrong.'; hint.className='settings-hint settings-hint-err';")
+                    .append("}")
+                  .append("})")
+                  .append(".catch(function(){ btn.disabled=false; hint.textContent='Could not reach the server.'; hint.className='settings-hint settings-hint-err'; });")
+              .append("});")
+              .append("})();</script>");
+        }
         if (gauthResult) {
             // This load of /settings is the gdriveConnect popup reporting its result
             // (see the "gauth=1" tag GoogleAuthHandler.java adds to its redirects).
@@ -285,11 +401,17 @@ public class SettingsHandler implements HttpHandler {
             ".settings-flash.err{background:#fdeaea;color:#9c1f1f;border:1px solid #f0b8b8;}" +
             ".settings-section{border-bottom:1px solid #eee;padding:22px 0;}" +
             ".settings-section:last-child{border-bottom:none;}" +
+            ".settings-section-warn{background:#fffaf0;margin:0 -24px;padding:22px 24px;border-bottom-color:#f5e3c3;}" +
             ".settings-section h2{font-size:16px;margin:0 0 6px;}" +
             ".settings-desc{color:#555;font-size:13px;margin:0 0 10px;line-height:1.5;}" +
             ".settings-current{font-size:13px;margin:0 0 10px;}" +
             ".settings-current code{background:#f4f5f7;padding:2px 6px;border-radius:4px;font-size:12px;}" +
             ".settings-tag{background:#eef0f2;color:#666;font-size:11px;padding:1px 8px;border-radius:10px;}" +
+            ".settings-tag-experimental{background:#fff4e0;color:#a85d00;margin-left:6px;vertical-align:middle;}" +
+            ".settings-access-request{background:#f8f9fb;border:1px solid #e2e4e8;border-radius:8px;padding:14px;margin:14px 0;}" +
+            ".settings-access-request-form{gap:8px;}" +
+            ".settings-access-request-form input[type=text]{flex:1;}" +
+            ".settings-hint-err{color:#9c1f1f;}" +
             ".settings-form{display:flex;gap:8px;}" +
             ".settings-form input[type=text]{flex:1;padding:8px 10px;border:1px solid #c7cbd1;border-radius:6px;font-size:13px;}" +
             ".settings-form input[type=number]{padding:8px 10px;border:1px solid #c7cbd1;border-radius:6px;font-size:13px;}" +
@@ -313,6 +435,9 @@ public class SettingsHandler implements HttpHandler {
             ".gaccount-disconnect-form{margin:0;}" +
             ".settings-btn-subtle{background:none;border:1px solid #ddd;color:#666;border-radius:6px;padding:6px 12px;font-size:13px;cursor:pointer;}" +
             ".settings-btn-subtle:hover{background:#fdeaea;color:#9c1f1f;border-color:#f0b8b8;}" +
+            ".settings-btn-danger{background:#c0362c;}" +
+            ".settings-btn-danger:hover{background:#a12e25;}" +
+            ".settings-hint-restart{color:#a85d00;font-weight:600;}" +
             ".settings-ideas ul{margin:0;padding-left:20px;color:#555;font-size:13px;line-height:1.9;}" +
             "</style>";
     }

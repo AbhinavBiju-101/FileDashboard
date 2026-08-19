@@ -27,11 +27,12 @@ public class Config {
     // Which port to run the local server on. Visit http://localhost:PORT
     public static final int PORT = 8080;
 
-    // Optional: set this to a secret string (e.g. "mysecret123") to require
-    // "?token=mysecret123" once per browser before the dashboard is usable.
-    // Leave as null to disable auth entirely (fine for pure localhost use).
-    // Worth turning on now that ROOT_DIR covers the whole drive, if this
-    // machine is ever reachable from other devices on your network.
+    // Manual override only - leave this null and use Settings ("Network
+    // Access") instead, which handles binding to loopback-only by default,
+    // auto-generates a token the moment network access is turned on, and
+    // never lets one exist without the other. Only set this if you
+    // specifically want a fixed, hardcoded token instead of the generated
+    // one - if set, it takes priority over whatever's in Settings.
     public static final String ACCESS_TOKEN = null;
 
     // Where app state (recent activity, etc.) is persisted between restarts.
